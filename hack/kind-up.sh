@@ -46,10 +46,7 @@ if [[ "$(docker inspect -f '{{json .NetworkSettings.Networks.kind}}' "$reg_name"
   docker network connect kind "$reg_name"
 fi
 
-# 5. Both nodes take workloads (2-node cluster).
-kubectl --kubeconfig "$kubeconfig" taint nodes --all node-role.kubernetes.io/control-plane- >/dev/null 2>&1 || true
-
-# 6. Advertise the registry (KEP-1755).
+# 5. Advertise the registry (KEP-1755).
 kubectl --kubeconfig "$kubeconfig" apply -f - >/dev/null <<YAML
 apiVersion: v1
 kind: ConfigMap

@@ -1,6 +1,6 @@
-# Local 2-node cluster: a schedulable control-plane plus one worker, so a
-# workspace can wake on a different node than it slept on. kind-up.sh
-# removes the control-plane taint and wires in the local image registry.
+# Local cluster shaped like production: a tainted control-plane and two
+# workers, so a workspace can wake on a different node than it slept on.
+# kind-up.sh wires each node to the local image registry.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: sbx
@@ -14,5 +14,7 @@ nodes:
       - containerPort: 30300 # Grafana NodePort
         hostPort: 3000
         listenAddress: 127.0.0.1
+  - role: worker
+    image: kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
   - role: worker
     image: kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0

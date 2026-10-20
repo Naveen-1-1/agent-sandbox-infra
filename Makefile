@@ -66,7 +66,7 @@ verify-vendor: ## Fail if charts/agent-sandbox differs from the pinned upstream 
 ##@ Cluster
 
 .PHONY: kind-up
-kind-up: ## Create or reuse the 2-node kind cluster and local registry (localhost:5001).
+kind-up: ## Create or reuse the 3-node kind cluster and local registry (localhost:5001).
 	KIND_CLUSTER=$(KIND_CLUSTER) hack/kind-up.sh
 
 .PHONY: kind-down

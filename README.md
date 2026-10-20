@@ -28,7 +28,7 @@ make doctor
 ## Quick start
 
 ```bash
-make kind-up          # 2-node kind cluster + local image registry on localhost:5001
+make kind-up          # 3-node kind cluster + local image registry on localhost:5001
 export KUBECONFIG=$PWD/bin/kubeconfig
 ```
 

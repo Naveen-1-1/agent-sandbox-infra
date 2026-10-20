@@ -53,3 +53,7 @@ concurrent writers, exactly one create-only write and one compare-and-swap win.
   uses the plain S3 API, so real S3 is a configuration change.
 - **Push before delete.** The pod and disk are deleted only after the snapshot is verified
   in S3. If the push fails, the sandbox keeps running and retries.
+- **Local cluster shaped like production.** kind runs a tainted control-plane plus two
+  workers, so a workspace can wake on a different node than it slept on. Measured on an
+  M4 with Docker at 10 GB: the upstream controller, SeaweedFS, kube-prometheus-stack and
+  three code-server pods use about 4 GiB; an extra idle worker costs about 120 MiB.
