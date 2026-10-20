@@ -72,3 +72,9 @@ kind-up: ## Create or reuse the 2-node kind cluster and local registry (localhos
 .PHONY: kind-down
 kind-down: ## Delete the kind cluster (REGISTRY_TOO=1 also removes the registry).
 	KIND_CLUSTER=$(KIND_CLUSTER) hack/kind-down.sh
+
+.PHONY: deploy-upstream
+deploy-upstream: ## Install only the vendored agent-sandbox controller (used by spikes and e2e).
+	helm upgrade --install agent-sandbox charts/agent-sandbox \
+	  --namespace agent-sandbox-system --create-namespace \
+	  --set namespace.create=false --set image.tag=v1.0.7 --wait --timeout 3m
