@@ -7,6 +7,10 @@ PKGS  ?= ./...
 # Developer tools are pinned in tools.mod and run through `go tool`.
 TOOL  := $(GO) tool -modfile=tools.mod
 
+KIND_CLUSTER ?= sbx
+# The cluster's kubeconfig lives in the repo (git-ignored), never in ~/.kube.
+export KUBECONFIG ?= $(CURDIR)/bin/kubeconfig
+
 .DEFAULT_GOAL := help
 
 ##@ General
@@ -16,6 +20,10 @@ help: ## Show this help.
 	@awk 'BEGIN {FS = ":.*## "} \
 	  /^##@/ {printf "\n%s\n", substr($$0, 5)} \
 	  /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+.PHONY: doctor
+doctor: ## Check the local toolchain and Docker resources.
+	@hack/doctor.sh
 
 ##@ Quality
 
@@ -54,3 +62,13 @@ vendor-upstream: ## Refresh the vendored agent-sandbox Helm chart (pinned tag + 
 .PHONY: verify-vendor
 verify-vendor: ## Fail if charts/agent-sandbox differs from the pinned upstream chart.
 	hack/vendor-agent-sandbox.sh --check
+
+##@ Cluster
+
+.PHONY: kind-up
+kind-up: ## Create or reuse the 2-node kind cluster and local registry (localhost:5001).
+	KIND_CLUSTER=$(KIND_CLUSTER) hack/kind-up.sh
+
+.PHONY: kind-down
+kind-down: ## Delete the kind cluster (REGISTRY_TOO=1 also removes the registry).
+	KIND_CLUSTER=$(KIND_CLUSTER) hack/kind-down.sh
