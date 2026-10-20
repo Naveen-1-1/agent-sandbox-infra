@@ -44,3 +44,13 @@ test: vet ## Run all unit tests with the race detector and goroutine-leak checks
 .PHONY: test-short
 test-short: ## Run fast unit tests only (no race detector, no envtest).
 	$(GO) test -short $(PKGS)
+
+##@ Upstream
+
+.PHONY: vendor-upstream
+vendor-upstream: ## Refresh the vendored agent-sandbox Helm chart (pinned tag + commit).
+	hack/vendor-agent-sandbox.sh
+
+.PHONY: verify-vendor
+verify-vendor: ## Fail if charts/agent-sandbox differs from the pinned upstream chart.
+	hack/vendor-agent-sandbox.sh --check

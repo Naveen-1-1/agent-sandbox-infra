@@ -1,0 +1,3 @@
+repository: https://github.com/kubernetes-sigs/agent-sandbox.git
+tag: v1.0.7
+commit: 807cc37107bd7c012115afac9fa9c3b77b8365c2
