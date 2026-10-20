@@ -113,3 +113,32 @@ test-e2e: ## Run end-to-end tests on the kind cluster (RUN=<regex> to filter).
 .PHONY: deploy-s3-local
 deploy-s3-local: ## Install only the local SeaweedFS S3 endpoint (used by spikes and e2e).
 	helm upgrade --install sbx charts/s3-local --namespace sbx-system --create-namespace --wait --timeout 3m
+
+##@ Build
+
+ARCH     ?= $(shell $(GO) env GOARCH)
+REGISTRY ?= localhost:5001
+BINARIES := sbx-agent sbx-sidecar sbx-controller
+IMAGES   := sbx-runtime sbx-controller sbx-fixtures
+# Content-derived tag; computed after the binaries are built.
+TAG = $(shell hack/image-tag.sh $(ARCH))
+
+.PHONY: build-linux
+build-linux: ## Cross-compile the in-cluster binaries into bin/linux_$(ARCH).
+	@for b in $(BINARIES); do \
+	  CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) $(GO) build -trimpath -buildvcs=false -ldflags "-s -w" \
+	    -o bin/linux_$(ARCH)/$$b ./cmd/$$b || exit 1; \
+	done
+
+.PHONY: images
+images: build-linux ## Build container images tagged with a content hash.
+	@tag=$(TAG); for img in $(IMAGES); do \
+	  docker build -q --platform linux/$(ARCH) --provenance=false -f images/$${img#sbx-}.Dockerfile \
+	    -t $(REGISTRY)/$$img:$$tag . >/dev/null || exit 1; \
+	  echo "built $(REGISTRY)/$$img:$$tag"; \
+	done
+
+.PHONY: push
+push: images ## Push images to the local registry.
+	@tag=$(TAG); for img in $(IMAGES); do docker push -q $(REGISTRY)/$$img:$$tag >/dev/null || exit 1; done; \
+	  echo "pushed tag $$tag"
