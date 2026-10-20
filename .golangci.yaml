@@ -22,6 +22,7 @@ linters:
         - G304 # file paths come from our own workspace layout
         - G301 # workspace dirs must stay readable by the workload container (0755)
         - G306 # workspace files must stay readable by the workload container (0644)
+        - G302 # same, for files opened with OpenFile
   exclusions:
     presets: [comments, std-error-handling]
     rules:

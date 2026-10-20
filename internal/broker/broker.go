@@ -230,14 +230,15 @@ func (s *Server) PresignBaseUpload(ctx context.Context, r *brokerv1.PresignBaseU
 }
 
 // presignCreate returns a create-only, checksum-checked upload URL for key,
-// or AlreadyExists if the (content-addressed) object is already stored.
+// or AlreadyExists (with only the key set) if the content-addressed object is
+// already stored.
 func (s *Server) presignCreate(ctx context.Context, key, sha256 string) (*brokerv1.PresignSnapshotUploadResponse, error) {
 	found, err := s.exists(ctx, key)
 	if err != nil {
 		return nil, err
 	}
 	if found {
-		return &brokerv1.PresignSnapshotUploadResponse{AlreadyExists: true}, nil
+		return &brokerv1.PresignSnapshotUploadResponse{AlreadyExists: true, Upload: &brokerv1.PresignedRequest{Key: key}}, nil
 	}
 	req, err := s.cfg.Store.PresignPut(ctx, key, s.cfg.PresignTTL, objstore.Cond{IfNoneMatch: true, SHA256: sha256})
 	if err != nil {

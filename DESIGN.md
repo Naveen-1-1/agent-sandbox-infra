@@ -79,6 +79,34 @@ caught. A freeze with a lease thaws itself if the controller disappears before c
 once a suspend is committed, the controller re-freezes without a lease. All calls need the
 per-epoch agent token except `/v1/health`.
 
+### Sidecar (`cmd/sbx-sidecar`, `internal/sidecar`)
+
+Our container in every workspace pod, next to the user's image, which can be any
+devcontainer. It runs in three ways:
+
+- **`install-tools`** (first init container) copies our binaries into a volume the workload
+  container mounts.
+- **`restore`** (second init container) asks the broker for this epoch's restore plan,
+  downloads the base bundle (or fetches the base from origin) and the latest snapshot,
+  checking the snapshot's checksum. It restores into a staging directory on the disk and
+  moves it into place. Because it's an init container, the workload starts only after the
+  files are there. `.sbx/volume.json` records the outcome: a `live` volume is never restored
+  over, and a half-finished restore is wiped and redone.
+- **`serve`** (native sidecar) takes snapshots for the controller. Attempts are keyed by
+  ID, run one at a time, and have their result written to the disk, so a restarted
+  controller or sidecar can rejoin an attempt. It uploads the bundle through a presigned URL
+  and caches the base commit in S3 in the background, so later wakes don't need the upstream
+  remote.
+
+### Broker (`internal/broker`, served by the controller)
+
+The only way a pod reaches S3. A pod presents its broker token, workspace and epoch. The
+broker reads the Workspace live from the API server, verifies the token, and refuses any
+epoch but the current one, so a pod left from an earlier wake is locked out. It then hands
+out short-lived presigned URLs. Downloads cover the cached base and the last committed
+snapshot. Uploads are create-only and checksum-checked under that workspace's own prefix,
+with the bundle size limit enforced up front.
+
 ### Tokens (`internal/token`)
 
 Every per-epoch token is `HMAC(master key, purpose | workspace UID | epoch)`. The purposes

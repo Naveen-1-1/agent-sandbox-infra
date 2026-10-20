@@ -176,8 +176,8 @@ func TestSnapshotUpload(t *testing.T) {
 		t.Fatalf("upload: %d %s", code, msg)
 	}
 	again, err := c.PresignSnapshotUpload(ctx(t), &brokerv1.PresignSnapshotUploadRequest{AttemptId: "a2", Sha256: sum(body), SizeBytes: int64(len(body))})
-	if err != nil || !again.GetAlreadyExists() {
-		t.Errorf("same bundle again: already_exists=%v err=%v", again.GetAlreadyExists(), err)
+	if err != nil || !again.GetAlreadyExists() || again.GetUpload().GetKey() != resp.GetUpload().GetKey() {
+		t.Errorf("same bundle again: already_exists=%v key=%q err=%v", again.GetAlreadyExists(), again.GetUpload().GetKey(), err)
 	}
 
 	_, err = c.PresignSnapshotUpload(ctx(t), &brokerv1.PresignSnapshotUploadRequest{AttemptId: "a3", Sha256: sum([]byte("x")), SizeBytes: 65})
