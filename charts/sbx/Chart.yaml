@@ -1,0 +1,19 @@
+apiVersion: v2
+name: sbx
+description: Agent sandboxes on Kubernetes that sleep cheaply and wake invisibly.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  # Upstream agent-sandbox, vendored unmodified. Disable if the cluster already runs it.
+  - name: agent-sandbox
+    version: 0.1.2
+    repository: file://../agent-sandbox
+    alias: agentSandbox
+    condition: agentSandbox.enabled
+  # Single-pod SeaweedFS for local development. Point s3.* at real S3 instead elsewhere.
+  - name: s3-local
+    version: 0.1.0
+    repository: file://../s3-local
+    alias: s3local
+    condition: s3local.enabled

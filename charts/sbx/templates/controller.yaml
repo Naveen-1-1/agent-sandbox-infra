@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-controller
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sbx-controller
+spec:
+  replicas: {{ .Values.controller.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: sbx-controller
+  template:
+    metadata:
+      labels: {{- include "sbx.labels" . | nindent 8 }}
+        app.kubernetes.io/name: sbx-controller
+      annotations:
+        checksum/values: {{ toJson .Values | sha256sum | trunc 16 }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-controller
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532 # lets the controller read the master key Secret
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: controller
+          image: {{ include "sbx.image" (dict "root" . "image" .Values.images.controller "name" "controller") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - --broker-addr=:{{ .Values.controller.brokerPort }}
+            - --metrics-addr=:{{ .Values.controller.metricsPort }}
+            - --health-addr=:{{ .Values.controller.healthPort }}
+            - --max-bundle-bytes={{ int64 .Values.controller.maxBundleBytes }}
+            - --presign-ttl={{ .Values.controller.presignTTL }}
+          env:
+            - {name: SBX_S3_ENDPOINT, value: {{ include "sbx.s3Endpoint" . | quote }}}
+            - {name: SBX_S3_PRESIGN_ENDPOINT, value: {{ .Values.s3.presignEndpoint | quote }}}
+            - {name: SBX_S3_REGION, value: {{ .Values.s3.region | quote }}}
+            - {name: SBX_S3_BUCKET, value: {{ .Values.s3.bucket | quote }}}
+            - {name: SBX_S3_PATH_STYLE, value: {{ .Values.s3.pathStyle | quote }}}
+            - {name: SBX_S3_CREATE_BUCKET, value: {{ .Values.s3.createBucket | quote }}}
+            - name: SBX_S3_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: {{ include "sbx.s3Secret" . }}, key: accessKey}}
+            - name: SBX_S3_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: {{ include "sbx.s3Secret" . }}, key: secretKey}}
+            # Workspace pod settings, consumed by the reconciler.
+            - {name: SBX_RUNTIME_IMAGE, value: {{ include "sbx.image" (dict "root" . "image" .Values.images.runtime "name" "runtime") | quote }}}
+            - {name: SBX_BROKER_ADDR, value: {{ include "sbx.brokerAddr" . | quote }}}
+          ports:
+            - {name: broker, containerPort: {{ .Values.controller.brokerPort }}}
+            - {name: metrics, containerPort: {{ .Values.controller.metricsPort }}}
+            - {name: health, containerPort: {{ .Values.controller.healthPort }}}
+          readinessProbe:
+            httpGet: {path: /readyz, port: health}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: health}
+            periodSeconds: 20
+          resources: {{- toYaml .Values.controller.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: master-key, mountPath: /var/run/sbx/master-key, readOnly: true}
+      volumes:
+        - name: master-key
+          secret: {secretName: {{ include "sbx.signingSecret" . }}, defaultMode: 0440}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-controller
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: sbx-controller
+  ports:
+    - {name: broker, port: {{ .Values.controller.brokerPort }}, targetPort: broker}
+    - {name: metrics, port: {{ .Values.controller.metricsPort }}, targetPort: metrics}

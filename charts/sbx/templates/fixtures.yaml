@@ -1,0 +1,44 @@
+{{- if .Values.fixtures.enabled }}
+# Test-only: read-only git repositories over HTTP for e2e tests and the demo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-fixtures
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sbx-fixtures
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: sbx-fixtures
+  template:
+    metadata:
+      labels: {{- include "sbx.labels" . | nindent 8 }}
+        app.kubernetes.io/name: sbx-fixtures
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: git
+          image: {{ include "sbx.image" (dict "root" . "image" .Values.images.fixtures "name" "fixtures") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /hello-node.git/info/refs, port: http}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-fixtures
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: sbx-fixtures
+  ports:
+    - {name: http, port: 80, targetPort: http}
+{{- end }}

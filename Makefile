@@ -80,6 +80,10 @@ test: vet envtest ## Run all unit tests (race detector, goroutine-leak checks, e
 test-short: ## Run fast unit tests only (no race detector, no envtest).
 	$(GO) test -short $(PKGS)
 
+.PHONY: test-e2e
+test-e2e: ## Run end-to-end tests on the kind cluster after make deploy (RUN=<regex> to filter).
+	$(GO) test -tags e2e -count=1 -p 1 -timeout 20m ./test/e2e/... $(if $(RUN),-run '$(RUN)') -v
+
 ##@ Upstream
 
 .PHONY: vendor-upstream
@@ -99,20 +103,6 @@ kind-up: ## Create or reuse the 3-node kind cluster and local registry (localhos
 .PHONY: kind-down
 kind-down: ## Delete the kind cluster (REGISTRY_TOO=1 also removes the registry).
 	KIND_CLUSTER=$(KIND_CLUSTER) hack/kind-down.sh
-
-.PHONY: deploy-upstream
-deploy-upstream: ## Install only the vendored agent-sandbox controller (used by spikes and e2e).
-	helm upgrade --install agent-sandbox charts/agent-sandbox \
-	  --namespace agent-sandbox-system --create-namespace \
-	  --set namespace.create=false --set image.tag=v1.0.7 --wait --timeout 3m
-
-.PHONY: test-e2e
-test-e2e: ## Run end-to-end tests on the kind cluster (RUN=<regex> to filter).
-	$(GO) test -tags e2e -count=1 -p 1 -timeout 20m ./test/e2e/... $(if $(RUN),-run '$(RUN)') -v
-
-.PHONY: deploy-s3-local
-deploy-s3-local: ## Install only the local SeaweedFS S3 endpoint (used by spikes and e2e).
-	helm upgrade --install sbx charts/s3-local --namespace sbx-system --create-namespace --wait --timeout 3m
 
 ##@ Build
 
@@ -142,3 +132,19 @@ images: build-linux ## Build container images tagged with a content hash.
 push: images ## Push images to the local registry.
 	@tag=$(TAG); for img in $(IMAGES); do docker push -q $(REGISTRY)/$$img:$$tag >/dev/null || exit 1; done; \
 	  echo "pushed tag $$tag"
+
+##@ Deploy
+
+NAMESPACE ?= sbx-system
+VALUES    ?= deploy/values/kind.yaml
+
+.PHONY: deploy
+deploy: push ## Build, push and install the platform (VALUES=deploy/values/kind.yaml).
+	helm dependency build --skip-refresh charts/sbx >/dev/null
+	kubectl apply --server-side -f $(CRD_DIR) >/dev/null
+	helm upgrade --install sbx charts/sbx --namespace $(NAMESPACE) --create-namespace \
+	  -f $(VALUES) --set global.imageTag=$(TAG) --wait --timeout 5m
+
+.PHONY: undeploy
+undeploy: ## Uninstall the platform (CRDs and the signing key are kept).
+	helm uninstall sbx --namespace $(NAMESPACE)

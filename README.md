@@ -29,8 +29,20 @@ make doctor
 
 ```bash
 make kind-up          # 3-node kind cluster + local image registry on localhost:5001
+make deploy           # build images, push them, install the chart (charts/sbx)
 export KUBECONFIG=$PWD/bin/kubeconfig
+kubectl -n sbx-system get pods
 ```
+
+`make deploy` installs, into `sbx-system`:
+
+- the sbx controller (which serves the broker),
+- upstream agent-sandbox,
+- a single-pod SeaweedFS for S3,
+- a small git server with test repositories.
+
+Every endpoint, credential, storage class and image registry is a Helm value in
+`charts/sbx/values.yaml`. `deploy/values/kind.yaml` holds the local overrides.
 
 ## Development
 
@@ -38,7 +50,10 @@ export KUBECONFIG=$PWD/bin/kubeconfig
 |---|---|
 | `make test` | Unit tests with `-race` and goroutine-leak checks |
 | `make lint` | golangci-lint (tools are pinned in `tools.mod`) |
+| `make test-e2e` | End-to-end tests against the deployed cluster (`RUN=<regex>`) |
+| `make gen` / `make verify-gen` | Regenerate CRDs and gRPC code / check they're current |
 | `make kind-up` / `make kind-down` | Create / delete the local cluster |
+| `make deploy` / `make undeploy` | Install / remove the platform |
 | `make verify-vendor` | Check the vendored upstream chart matches v1.0.7 |
 
 `make help` lists every target.

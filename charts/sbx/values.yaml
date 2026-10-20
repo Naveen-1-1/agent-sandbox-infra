@@ -1,0 +1,70 @@
+# Every endpoint, credential, storage class and registry comes from here;
+# nothing in the templates assumes kind or a single node.
+
+global:
+  # Registry prefix for sbx images, e.g. localhost:5001 or ghcr.io/org.
+  imageRegistry: ""
+  # Default tag for sbx images (make deploy sets a content hash).
+  imageTag: ""
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+images:
+  controller: {repository: sbx-controller, tag: ""}
+  runtime: {repository: sbx-runtime, tag: ""}
+  fixtures: {repository: sbx-fixtures, tag: ""}
+
+controller:
+  replicas: 1
+  brokerPort: 9443
+  metricsPort: 8080
+  healthPort: 8081
+  maxBundleBytes: 524288000 # 500 MiB
+  presignTTL: 15m
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 512Mi}
+
+# Master key for per-epoch tokens. Empty: generate one and keep it across upgrades.
+signing:
+  existingSecret: "" # Secret with key "key" (at least 32 bytes)
+
+s3:
+  # Empty endpoint with s3local.enabled uses the bundled SeaweedFS service.
+  endpoint: ""
+  # Address pods use in presigned URLs, if different from endpoint.
+  presignEndpoint: ""
+  region: us-east-1
+  bucket: sbx
+  pathStyle: true
+  createBucket: true
+  # Secret with keys accessKey and secretKey. Empty with s3local.enabled uses its generated Secret.
+  existingSecret: ""
+
+# Defaults for workspace pods.
+workspace:
+  defaultImage: mcr.microsoft.com/devcontainers/base:trixie
+  runAsUser: 1000
+  runAsGroup: 1000
+  storage:
+    size: 5Gi
+    storageClassName: "" # empty = cluster default
+  snapshot:
+    exclude: [node_modules, .venv]
+    maxFileBytes: 52428800 # 50 MiB
+    maxNewBytes: 524288000 # 500 MiB
+
+# Test-only git server for e2e tests and the demo.
+fixtures:
+  enabled: false
+
+agentSandbox:
+  enabled: true
+  image:
+    tag: v1.0.7
+  namespace:
+    create: true
+    name: agent-sandbox-system
+
+s3local:
+  enabled: false

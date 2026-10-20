@@ -65,6 +65,20 @@ violation returns a `PolicyError` naming the files (never the secret), and the w
 keeps running. Credentials embedded in a remote URL are used for fetching but never stored
 in the restored repository or shown in errors.
 
+### Workspace pod (`internal/controller/podspec`)
+
+One epoch of a workspace is one upstream `Sandbox` pod, built by a pure function and
+pinned by a golden file. Its containers start in order:
+
+1. `sbx-tools` copies our binaries into a shared volume.
+2. `sbx-restore` puts the files on this epoch's disk.
+3. `sbx-sidecar` runs as a native sidecar.
+4. The user's image runs with `sbx-agent` as PID 1, mounting the disk at `/workspace`.
+
+Kubernetes guarantees the workload never starts before its files exist. The per-epoch
+token Secret is mounted only into our containers. The workload gets just the hash of its
+agent token, has no service-account token, and our containers drop all capabilities.
+
 ### Agent (`cmd/sbx-agent`, `internal/agent`)
 
 PID 1 of the workload container, which runs the user's devcontainer image. It re-executes
@@ -134,6 +148,22 @@ ever holding S3 credentials. An in-memory fake has the same semantics for unit t
 contract test suite runs against both the fake and the real endpoint, which is how we know
 the fake is honest. Locally the endpoint is SeaweedFS (`charts/s3-local`); with 32
 concurrent writers, exactly one create-only write and one compare-and-swap win.
+
+### Packaging (`charts/sbx`, `images/`)
+
+One umbrella chart installs:
+
+- the controller;
+- upstream agent-sandbox (vendored and unmodified; can be disabled);
+- optionally, SeaweedFS and a test-only git fixtures server.
+
+The token master key is generated once and kept across upgrades. Images are built from
+binaries cross-compiled on the host and tagged with a content hash, so an upgrade only
+rolls what changed. There are three images:
+
+- `sbx-runtime` (sidecar, agent, git) for workspace pods;
+- `sbx-controller`;
+- `sbx-fixtures` (git over plain HTTP) for tests and the demo.
 
 ## Key decisions
 

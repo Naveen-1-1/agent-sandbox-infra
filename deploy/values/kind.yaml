@@ -1,0 +1,8 @@
+# Local kind cluster: images from the local registry, bundled SeaweedFS and
+# the test-only git fixtures server.
+global:
+  imageRegistry: localhost:5001
+s3local:
+  enabled: true
+fixtures:
+  enabled: true
