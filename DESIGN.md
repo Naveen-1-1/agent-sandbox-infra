@@ -18,6 +18,16 @@ server (sandboxd) and its Helm chart unmodified.
 
 ## Components
 
+### Workspace API (`api/v1alpha1`, `sbx.dev/v1alpha1`)
+
+A `Workspace` is the long-lived identity of a sandbox. Its spec names the source repository
+(immutable), an optional image, a resource profile and a `mode` (`Auto`, `AlwaysOn`, `Off`).
+Its status records where it is in the sleep/wake cycle. Ownership is split so two writers
+never fight. The user owns `mode`. The gateway owns only `spec.wake.seq`, a counter it
+bumps to ask for a wake (the API rejects decreases). The controller owns all of status:
+`phase`, `epoch` (one per wake, naming that wake's pod, disk and tokens), the in-progress
+suspend or wake, the last committed snapshot, and a per-stage wake timeline.
+
 ### Snapshot (`internal/snapshot`)
 
 Turns a workspace into a git bundle and back. A snapshot is two synthetic commits laid out

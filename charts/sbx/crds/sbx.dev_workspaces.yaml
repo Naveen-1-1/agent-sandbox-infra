@@ -1,0 +1,498 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: workspaces.sbx.dev
+spec:
+  group: sbx.dev
+  names:
+    kind: Workspace
+    listKind: WorkspaceList
+    plural: workspaces
+    shortNames:
+    - ws
+    singular: workspace
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.mode
+      name: Mode
+      type: string
+    - jsonPath: .status.epoch
+      name: Epoch
+      type: integer
+    - jsonPath: .status.resolvedImage
+      name: Image
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Workspace is a long-lived agent sandbox. While awake it owns one
+          agent-sandbox Sandbox (one pod) and one PVC. While asleep it owns neither:
+          its files live in S3 as a git bundle.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: WorkspaceSpec is what the user (and, for Wake, the gateway)
+              asks for.
+            properties:
+              image:
+                description: |-
+                  Image overrides the image chosen from the repository's devcontainer.json
+                  (or the platform default).
+                type: string
+              mode:
+                default: Auto
+                description: |-
+                  Mode says who decides when the workspace sleeps:
+                    - Auto: the sleep policy suspends it when idle; requests wake it.
+                    - AlwaysOn: it is never suspended.
+                    - Off: it stays suspended; requests never wake it.
+                enum:
+                - Auto
+                - AlwaysOn
+                - "Off"
+                type: string
+              policy:
+                description: Policy overrides the cluster-wide sleep policy for this
+                  workspace.
+                properties:
+                  name:
+                    description: Name is a registered policy, for example "fixed"
+                      or "never".
+                    minLength: 1
+                    type: string
+                  params:
+                    additionalProperties:
+                      type: string
+                    description: 'Params are policy-specific settings, for example
+                      idleTimeout: "10m".'
+                    type: object
+                required:
+                - name
+                type: object
+              profile:
+                default: default
+                description: |-
+                  Profile names a resource profile (CPU, memory, disk) from the platform
+                  configuration.
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              source:
+                description: Source is the git repository the workspace starts from.
+                properties:
+                  depth:
+                    description: Depth makes the initial clone shallow. Zero clones
+                      full history.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  ref:
+                    description: Ref is a branch, tag or commit. Empty means the remote's
+                      default branch.
+                    maxLength: 255
+                    type: string
+                  repoURL:
+                    description: RepoURL is the repository to clone, over https or
+                      http.
+                    maxLength: 2048
+                    pattern: ^https?://[^\s]+$
+                    type: string
+                required:
+                - repoURL
+                type: object
+                x-kubernetes-validations:
+                - message: source is immutable
+                  rule: self == oldSelf
+              wake:
+                description: |-
+                  Wake is written by the gateway to ask for a wake. Seq only increases;
+                  the controller wakes once for each new value.
+                properties:
+                  at:
+                    description: At is when the wake was requested.
+                    format: date-time
+                    type: string
+                  seq:
+                    description: Seq is bumped by one for each wake request.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  trigger:
+                    description: Trigger says what asked for the wake.
+                    enum:
+                    - Request
+                    - Hint
+                    - API
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: wake.seq must not decrease
+                  rule: '!has(oldSelf.seq) || (has(self.seq) && self.seq >= oldSelf.seq)'
+            required:
+            - source
+            type: object
+          status:
+            description: WorkspaceStatus is owned by the controller.
+            properties:
+              base:
+                description: Base is the upstream commit the workspace started from.
+                properties:
+                  branch:
+                    description: Branch is the branch created at SHA.
+                    type: string
+                  bundleKey:
+                    description: BundleKey is the S3 key of a bundle of SHA, if one
+                      is cached.
+                    type: string
+                  sha:
+                    description: SHA is the commit the workspace was created at.
+                    type: string
+                  shallow:
+                    description: |-
+                      Shallow is true when the workspace was cloned with a depth limit; its
+                      base always comes from the upstream remote.
+                    type: boolean
+                  url:
+                    description: URL is the upstream repository.
+                    type: string
+                required:
+                - sha
+                - url
+                type: object
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              epoch:
+                description: Epoch counts wakes. Each epoch gets its own pod, disk
+                  and tokens.
+                format: int64
+                type: integer
+              lastActivityAt:
+                description: |-
+                  LastActivityAt is a coarse record of the last user or agent activity,
+                  so a restarted controller doesn't think every workspace is idle.
+                format: date-time
+                type: string
+              lastSnapshot:
+                description: LastSnapshot is the newest snapshot committed to S3.
+                properties:
+                  bundleKey:
+                    description: BundleKey is the S3 key of the bundle (content addressed).
+                    type: string
+                  bytes:
+                    format: int64
+                    type: integer
+                  createdAt:
+                    format: date-time
+                    type: string
+                  epoch:
+                    format: int64
+                    type: integer
+                  seq:
+                    description: Seq numbers snapshots of one workspace, starting
+                      at 1.
+                    format: int64
+                    type: integer
+                  sha256:
+                    type: string
+                  wipSHA:
+                    description: WIPSHA is the snapshot commit.
+                    type: string
+                required:
+                - bundleKey
+                - bytes
+                - epoch
+                - seq
+                - sha256
+                - wipSHA
+                type: object
+              observedGeneration:
+                description: ObservedGeneration is the spec generation the controller
+                  last acted on.
+                format: int64
+                type: integer
+              observedWakeSeq:
+                description: ObservedWakeSeq is the last spec.wake.seq the controller
+                  acted on.
+                format: int64
+                type: integer
+              phase:
+                description: Phase is where a workspace is in its sleep/wake cycle.
+                enum:
+                - Pending
+                - Provisioning
+                - Running
+                - Suspending
+                - TearingDown
+                - Suspended
+                - Waking
+                - Deleting
+                - Failed
+                type: string
+              pod:
+                description: Pod identifies the current epoch's pod.
+                properties:
+                  ip:
+                    type: string
+                  name:
+                    type: string
+                  nodeName:
+                    type: string
+                  uid:
+                    description: |-
+                      UID is a type that holds unique ID values, including UUIDs.  Because we
+                      don't ONLY use UUIDs, this is an alias to string.  Being a type captures
+                      intent and helps make sure that UIDs and names do not get conflated.
+                    type: string
+                required:
+                - name
+                - uid
+                type: object
+              resolvedImage:
+                description: ResolvedImage is the workload image in use.
+                type: string
+              suspend:
+                description: Suspend tracks an in-progress suspend attempt.
+                properties:
+                  attemptID:
+                    description: AttemptID names the attempt; every side effect is
+                      keyed by it.
+                    type: string
+                  attempts:
+                    format: int32
+                    type: integer
+                  committed:
+                    description: 'Committed is the point of no return: the pod and
+                      disk will be deleted.'
+                    type: boolean
+                  frozenAt:
+                    description: |-
+                      FrozenAt is when the workload was frozen; it also timestamps the
+                      snapshot commits.
+                    format: date-time
+                    type: string
+                  lastError:
+                    type: string
+                  podUID:
+                    description: PodUID is the pod being snapshotted. If it changes,
+                      the attempt is void.
+                    type: string
+                  snapshot:
+                    description: Snapshot is the verified snapshot for this attempt.
+                    properties:
+                      bundleKey:
+                        description: BundleKey is the S3 key of the bundle (content
+                          addressed).
+                        type: string
+                      bytes:
+                        format: int64
+                        type: integer
+                      createdAt:
+                        format: date-time
+                        type: string
+                      epoch:
+                        format: int64
+                        type: integer
+                      seq:
+                        description: Seq numbers snapshots of one workspace, starting
+                          at 1.
+                        format: int64
+                        type: integer
+                      sha256:
+                        type: string
+                      wipSHA:
+                        description: WIPSHA is the snapshot commit.
+                        type: string
+                    required:
+                    - bundleKey
+                    - bytes
+                    - epoch
+                    - seq
+                    - sha256
+                    - wipSHA
+                    type: object
+                  startedAt:
+                    format: date-time
+                    type: string
+                  startedWakeSeq:
+                    description: |-
+                      StartedWakeSeq is spec.wake.seq when the attempt began. A different
+                      value at commit time means a wake raced the suspend, and it aborts.
+                    format: int64
+                    type: integer
+                  step:
+                    description: Step is the last completed step.
+                    enum:
+                    - Started
+                    - Frozen
+                    - Snapshotted
+                    - Verified
+                    - ManifestWritten
+                    - Committed
+                    - PodGone
+                    - VolumeDeleted
+                    type: string
+                required:
+                - attemptID
+                - podUID
+                - startedAt
+                - startedWakeSeq
+                type: object
+              timeline:
+                description: Timeline records how long the last wake took, stage by
+                  stage.
+                properties:
+                  depsReadyAt:
+                    format: date-time
+                    type: string
+                  filesReadyAt:
+                    format: date-time
+                    type: string
+                  podScheduledAt:
+                    format: date-time
+                    type: string
+                  readyAt:
+                    format: date-time
+                    type: string
+                  requestedAt:
+                    format: date-time
+                    type: string
+                  trigger:
+                    description: WakeTrigger is what asked for a wake.
+                    enum:
+                    - Request
+                    - Hint
+                    - API
+                    type: string
+                type: object
+              volume:
+                description: Volume is the current epoch's disk.
+                properties:
+                  claimName:
+                    type: string
+                  everBound:
+                    description: |-
+                      EverBound is set once a pod has used the claim. A claim that was ever
+                      bound is never recreated, because an empty replacement would look like
+                      lost work.
+                    type: boolean
+                required:
+                - claimName
+                type: object
+              wake:
+                description: Wake tracks an in-progress wake.
+                properties:
+                  restoreSeq:
+                    description: RestoreSeq is the snapshot being restored; zero restores
+                      the base.
+                    format: int64
+                    type: integer
+                  startedAt:
+                    format: date-time
+                    type: string
+                  targetEpoch:
+                    description: TargetEpoch is the epoch being brought up.
+                    format: int64
+                    type: integer
+                  trigger:
+                    description: WakeTrigger is what asked for a wake.
+                    enum:
+                    - Request
+                    - Hint
+                    - API
+                    type: string
+                required:
+                - startedAt
+                - targetEpoch
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

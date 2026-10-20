@@ -25,6 +25,15 @@ help: ## Show this help.
 doctor: ## Check the local toolchain and Docker resources.
 	@hack/doctor.sh
 
+##@ Codegen
+
+CRD_DIR := charts/sbx/crds
+
+.PHONY: gen
+gen: ## Regenerate deepcopy code and CRDs.
+	$(TOOL) controller-gen object paths=./api/...
+	$(TOOL) controller-gen crd paths=./api/... output:crd:dir=$(CRD_DIR)
+
 ##@ Quality
 
 .PHONY: fmt
@@ -45,8 +54,16 @@ lint-fix: ## Run golangci-lint and apply automatic fixes.
 
 ##@ Test
 
+# Keep in step with the kind node image and internal/testutil/envtestx.
+ENVTEST_K8S_VERSION ?= 1.35.0
+
+.PHONY: envtest
+envtest: ## Install kube-apiserver and etcd for envtest into bin/envtest.
+	@$(TOOL) setup-envtest use -i $(ENVTEST_K8S_VERSION) --bin-dir $(CURDIR)/bin/envtest -p path >/dev/null 2>&1 || \
+	  $(TOOL) setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(CURDIR)/bin/envtest -p path
+
 .PHONY: test
-test: vet ## Run all unit tests with the race detector and goroutine-leak checks.
+test: vet envtest ## Run all unit tests (race detector, goroutine-leak checks, envtest).
 	$(GO) test -race -shuffle=on $(PKGS)
 
 .PHONY: test-short

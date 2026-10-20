@@ -24,8 +24,25 @@ var ignored = []goleak.Option{
 
 // VerifyTestMain runs the package's tests and then fails if any goroutine
 // started by them is still running.
-func VerifyTestMain(m *testing.M, opts ...goleak.Option) {
+func VerifyTestMain(m goleak.TestingM, opts ...goleak.Option) {
 	goleak.VerifyTestMain(m, append(append([]goleak.Option{}, ignored...), opts...)...)
+}
+
+// WithTeardown runs teardown after the tests and before the leak check, for
+// package-wide fixtures such as a test API server.
+func WithTeardown(m *testing.M, teardown func()) goleak.TestingM {
+	return teardownM{m: m, teardown: teardown}
+}
+
+type teardownM struct {
+	m        *testing.M
+	teardown func()
+}
+
+func (t teardownM) Run() int {
+	code := t.m.Run()
+	t.teardown()
+	return code
 }
 
 // Check fails t if goroutines leak from a single test; use it in tests that
