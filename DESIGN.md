@@ -65,6 +65,27 @@ violation returns a `PolicyError` naming the files (never the secret), and the w
 keeps running. Credentials embedded in a remote URL are used for fetching but never stored
 in the restored repository or shown in errors.
 
+### Agent (`cmd/sbx-agent`, `internal/agent`)
+
+PID 1 of the workload container, which runs the user's devcontainer image. It re-executes
+itself: PID 1 only reaps orphaned processes and forwards signals, and the child does the
+work. The child embeds upstream sandboxd's exec (gRPC) and files (REST) APIs unmodified,
+behind a gate of its own interceptors. The gate records activity, running commands and open
+exec streams for the sleep policy. During a freeze it refuses new exec calls and file writes
+with a "frozen" marker the gateway understands; reads still work. **Freeze** closes the
+gate, waits for file writes already in flight, then sends SIGSTOP to every other process in
+the container, rescanning `/proc` until nothing new appears so a process forked mid-scan is
+caught. A freeze with a lease thaws itself if the controller disappears before committing;
+once a suspend is committed, the controller re-freezes without a lease. All calls need the
+per-epoch agent token except `/v1/health`.
+
+### Tokens (`internal/token`)
+
+Every per-epoch token is `HMAC(master key, purpose | workspace UID | epoch)`. The purposes
+are sidecar, agent and broker. The controller and gateway hold the master key and recompute
+tokens on demand, so nothing is stored. A pod receives only its own epoch's tokens, so a
+compromised workspace can't mint tokens for another workspace or another epoch.
+
 ### Snapshot store (`internal/snapstore`)
 
 Owns the S3 layout. `ws/<uid>/b/<sha256>.bundle` holds bundles, written once and content
