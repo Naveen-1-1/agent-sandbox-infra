@@ -13,12 +13,17 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-
+	sbv1 "sigs.k8s.io/agent-sandbox/api/v1beta1"
 	sandboxclient "sigs.k8s.io/agent-sandbox/clients/k8s/clientset/versioned"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 )
 
 // Clients bundles the API clients e2e tests use.
@@ -26,6 +31,8 @@ type Clients struct {
 	Config  *rest.Config
 	Kube    kubernetes.Interface
 	Sandbox sandboxclient.Interface
+	// CR reads and writes Workspaces, Sandboxes and core objects.
+	CR client.Client
 }
 
 // NewClients connects to the cluster named by $KUBECONFIG.
@@ -55,7 +62,17 @@ func NewClients(t testing.TB) *Clients {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Clients{Config: cfg, Kube: kube, Sandbox: sb}
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sbv1.AddToScheme, sbxv1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cr, err := client.New(cfg, client.Options{Scheme: scheme, HTTPClient: hc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &Clients{Config: cfg, Kube: kube, Sandbox: sb, CR: cr}
 }
 
 // Ctx returns a context that ends with the test or after d.
