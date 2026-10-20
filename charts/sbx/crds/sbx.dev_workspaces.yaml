@@ -313,6 +313,11 @@ spec:
                 - Deleting
                 - Failed
                 type: string
+              phaseSince:
+                description: PhaseSince is when the workspace entered its current
+                  phase.
+                format: date-time
+                type: string
               pod:
                 description: Pod identifies the current epoch's pod.
                 properties:
@@ -422,6 +427,17 @@ spec:
                 - startedAt
                 - startedWakeSeq
                 type: object
+              suspendFailures:
+                description: SuspendFailures counts snapshot attempts that failed
+                  in a row.
+                format: int32
+                type: integer
+              suspendRetryAt:
+                description: |-
+                  SuspendRetryAt holds off the next suspend after a failure (exponential
+                  backoff), so a workspace that can't be snapshotted keeps running.
+                format: date-time
+                type: string
               timeline:
                 description: Timeline records how long the last wake took, stage by
                   stage.

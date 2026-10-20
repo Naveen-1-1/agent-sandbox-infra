@@ -158,6 +158,14 @@ const (
 	PhaseFailed       Phase = "Failed"       // needs a human; see conditions
 )
 
+// AnnotationPaused makes the controller leave the workspace alone (for
+// maintenance or debugging); remove it to resume reconciling.
+const AnnotationPaused = "sbx.dev/paused"
+
+// AnnotationSuspendRequested asks the controller to suspend the workspace
+// once; it removes the annotation when the suspend finishes or is aborted.
+const AnnotationSuspendRequested = "sbx.dev/suspend-requested"
+
 // Condition types reported on a Workspace.
 const (
 	// ConditionReady is true when the workspace can serve requests.
@@ -181,6 +189,10 @@ type WorkspaceStatus struct {
 
 	// +optional
 	Phase Phase `json:"phase,omitempty"`
+
+	// PhaseSince is when the workspace entered its current phase.
+	// +optional
+	PhaseSince *metav1.Time `json:"phaseSince,omitempty"`
 
 	// Epoch counts wakes. Each epoch gets its own pod, disk and tokens.
 	// +optional
@@ -221,6 +233,15 @@ type WorkspaceStatus struct {
 	// Timeline records how long the last wake took, stage by stage.
 	// +optional
 	Timeline *WakeTimeline `json:"timeline,omitempty"`
+
+	// SuspendFailures counts snapshot attempts that failed in a row.
+	// +optional
+	SuspendFailures int32 `json:"suspendFailures,omitempty"`
+
+	// SuspendRetryAt holds off the next suspend after a failure (exponential
+	// backoff), so a workspace that can't be snapshotted keeps running.
+	// +optional
+	SuspendRetryAt *metav1.Time `json:"suspendRetryAt,omitempty"`
 
 	// LastActivityAt is a coarse record of the last user or agent activity,
 	// so a restarted controller doesn't think every workspace is idle.

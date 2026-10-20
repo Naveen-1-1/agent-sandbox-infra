@@ -65,6 +65,45 @@ violation returns a `PolicyError` naming the files (never the secret), and the w
 keeps running. Credentials embedded in a remote URL are used for fetching but never stored
 in the restored repository or shown in errors.
 
+### Controller (`cmd/sbx-controller`, `internal/controller/workspace`)
+
+A level-triggered state machine over `Workspace`. Each pass does one idempotent step and
+records it in status with an optimistic-concurrency update. A controller that crashes after
+any side effect simply redoes the current step, so the reconciler keeps no memory of its
+own. Leader election makes one replica run it; the broker runs on every replica.
+
+```
+Pending ─► Provisioning ─► Running ─► Suspending ─► TearingDown ─► Suspended ─► Waking ─► Running
+                              ▲            │ abort (wake, AlwaysOn,                          │
+                              └────────────┘ pod restart, timeout, failure)                  │
+                              ▲                                                               │
+                              └───────────────────────────────────────────────────────────────┘
+```
+
+- **Provisioning** pins the base commit (`git ls-remote`), sets epoch 1, and creates the
+  token Secret, the protected disk and the Sandbox.
+- **Suspending** runs these steps. Freeze (with a lease) → snapshot in the sidecar →
+  commit the manifest in S3 → re-freeze without a lease → **commit point**. The commit point
+  is a status write that fails if a wake request (`spec.wake.seq`) arrived meanwhile; any
+  failure before it thaws the workload and returns it to Running. A failed snapshot sets
+  `SnapshotFailed` with the reason (for example a detected secret), backs off exponentially,
+  and never deletes the pod or disk.
+- **TearingDown** cannot go back. It sets the Sandbox to Suspended, waits for the pod to go,
+  then removes our finalizer from the disk and deletes it.
+- **Waking** advances the epoch first, so the new pod's tokens are the ones the broker
+  accepts. It creates that epoch's Secret and disk, and patches the template and `Running`
+  in one write. The resourceVersion-checked status write that starts a wake turns any
+  number of concurrent wake requests into exactly one.
+- **Deleting** removes the Sandbox, disks and Secrets, and purges the workspace's S3
+  prefix. `sbx.dev/paused` makes the controller skip a workspace.
+
+Tests run upstream's real Sandbox controller with a fake kubelet. One test crashes the
+controller after each of the 28 side effects of a create/suspend/wake cycle and checks:
+no disk is deleted before its snapshot is committed, there is exactly one wake, the
+manifest matches status, and only one disk exists at a time. Metrics cover workspaces per
+phase, time in each phase, wake latency to files-ready and serving, restore bytes, and wake
+and suspend counts.
+
 ### Workspace pod (`internal/controller/podspec`)
 
 One epoch of a workspace is one upstream `Sandbox` pod, built by a pure function and
