@@ -1,0 +1,24 @@
+# Local-only docs: plans, phase notes, ADRs, scratch. Never committed.
+notes/
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+
+# Build outputs, local tools and caches
+bin/
+dist/
+.cache/
+coverage*.out
+
+# Frontend and extension build outputs
+web/node_modules/
+web/dist/
+extensions/*/node_modules/
+extensions/*/dist/
+*.vsix
+internal/gateway/webui/dist/
+
+# Helm dependency archives (rebuilt from Chart.lock)
+charts/*/charts/*.tgz
