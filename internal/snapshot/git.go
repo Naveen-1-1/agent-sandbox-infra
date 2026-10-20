@@ -41,6 +41,12 @@ func (g git) run(ctx context.Context, args ...string) (string, error) {
 }
 
 func (g git) runInput(ctx context.Context, stdin []byte, args ...string) (string, error) {
+	out, err := g.raw(ctx, stdin, args...)
+	return strings.TrimSpace(out), err
+}
+
+// raw runs git and returns stdout untouched, for NUL-separated output.
+func (g git) raw(ctx context.Context, stdin []byte, args ...string) (string, error) {
 	full := append([]string{"-c", "safe.directory=*", "-c", "core.quotepath=off"}, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Dir = g.dir
@@ -51,9 +57,9 @@ func (g git) runInput(ctx context.Context, stdin []byte, args ...string) (string
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("git %s: %w: %s", Redact(strings.Join(args, " ")), err, Redact(strings.TrimSpace(stderr.String())))
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.String(), nil
 }
 
 // baseEnv keeps PATH and a few locale variables, and isolates git from

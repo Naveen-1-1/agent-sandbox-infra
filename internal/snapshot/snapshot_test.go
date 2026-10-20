@@ -23,7 +23,7 @@ func TestMain(m *testing.M) { leaktest.VerifyTestMain(m) }
 
 var (
 	freeze  = time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
-	exclude = []string{".env", ".env.*", "*.pem", "id_rsa*", "node_modules", ".venv"}
+	exclude = []string{"node_modules", ".venv"}
 )
 
 // workspace clones a small upstream repo and makes the kind of mess an agent

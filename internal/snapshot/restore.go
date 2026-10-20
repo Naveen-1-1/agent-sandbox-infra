@@ -11,8 +11,8 @@ import (
 
 // RestoreOptions says where a workspace's state comes from.
 type RestoreOptions struct {
-	// OriginURL becomes the "origin" remote, and is where Base is fetched
-	// from when BaseBundle is empty.
+	// OriginURL is where Base is fetched from when BaseBundle is empty. It
+	// becomes the "origin" remote with any credentials removed.
 	OriginURL string
 	// Base is the upstream commit the workspace started from.
 	Base string
@@ -41,7 +41,7 @@ func Restore(ctx context.Context, dir string, o RestoreOptions) error {
 		return err
 	}
 	if o.OriginURL != "" {
-		if _, err := g.run(ctx, "remote", "add", "origin", o.OriginURL); err != nil {
+		if _, err := g.run(ctx, "remote", "add", "origin", StripCredentials(o.OriginURL)); err != nil {
 			return err
 		}
 	}
@@ -67,7 +67,8 @@ func fetchBase(ctx context.Context, g git, o RestoreOptions) error {
 	if o.Depth > 0 {
 		args = append(args, "--depth", strconv.Itoa(o.Depth))
 	}
-	_, err := g.run(ctx, append(args, "origin", o.Base)...)
+	// Fetch from the URL itself so credentials are used but never stored.
+	_, err := g.run(ctx, append(args, o.OriginURL, o.Base)...)
 	return err
 }
 

@@ -31,11 +31,16 @@ type Options struct {
 	// Base is the upstream commit the workspace started from. Objects it can
 	// reach are left out of the bundle.
 	Base string
-	// Exclude lists patterns that are never saved, even when tracked: secrets
-	// and dependency directories. A pattern without a slash matches a file or
-	// directory with that name anywhere ("node_modules", ".env", "*.pem");
-	// a pattern with a slash is a glob relative to the repository root.
+	// Exclude lists patterns that are never saved from the working tree or
+	// staging area, such as dependency directories. A pattern without a slash
+	// matches a file or directory with that name anywhere ("node_modules");
+	// a pattern with a slash is a glob from the repository root.
 	Exclude []string
+	// Secrets keeps credentials out of the snapshot. Nil means
+	// DefaultSecretPolicy.
+	Secrets *SecretPolicy
+	// Limits caps file, content and bundle sizes.
+	Limits Limits
 	// Time stamps the synthetic commits, so snapshotting the same state twice
 	// yields the same commit IDs.
 	Time time.Time
@@ -54,10 +59,12 @@ type Result struct {
 	Size       int64    // bundle size in bytes
 	SHA256     string   // hex SHA-256 of the bundle file
 	Refs       []string // refs recorded in the bundle
+	NewBytes   int64    // total size of files the base doesn't have
 }
 
 // Create snapshots the repository at repo into a bundle. It reads the user's
-// repository but never writes to it.
+// repository but never writes to it. A *PolicyError means a secret or size
+// rule refused the snapshot.
 func Create(ctx context.Context, repo string, opts Options) (*Result, error) {
 	if opts.WorkDir == "" {
 		return nil, errors.New("snapshot: WorkDir is required")
@@ -83,14 +90,20 @@ func Create(ctx context.Context, repo string, opts Options) (*Result, error) {
 		"GIT_OBJECT_DIRECTORY="+filepath.Join(shadow, "objects"),
 	)
 
+	secrets := DefaultSecretPolicy()
+	if opts.Secrets != nil {
+		secrets = *opts.Secrets
+	}
+	drop := func(p string) bool { return matchAny(opts.Exclude, p) || secrets.isSecretPath(p) }
+
 	res := &Result{}
 	res.Head, res.HeadCommit = readHead(ctx, plumb)
 
-	indexTree, indexMode, err := stagedTree(ctx, plumb, gitDir, opts.WorkDir, res.HeadCommit)
+	indexTree, indexMode, err := stagedTree(ctx, plumb, gitDir, opts.WorkDir, res.HeadCommit, drop)
 	if err != nil {
 		return nil, err
 	}
-	wipTree, err := worktreeTree(ctx, plumb, gitDir, opts.WorkDir, opts.Exclude)
+	wipTree, err := worktreeTree(ctx, plumb, gitDir, opts.WorkDir, opts.Exclude, drop)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +128,17 @@ func Create(ctx context.Context, repo string, opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	if res.Refs, err = copyRefs(ctx, user.with("GIT_DIR="+gitDir), git{dir: shadow, env: []string{"GIT_DIR=" + shadow}}, res.WIP); err != nil {
+	sg := git{dir: shadow, env: []string{"GIT_DIR=" + shadow}}
+	if res.Refs, err = copyRefs(ctx, user.with("GIT_DIR="+gitDir), sg, res.WIP); err != nil {
+		return nil, err
+	}
+
+	// Check exactly what the bundle will carry before writing it.
+	objs, err := listNewObjects(ctx, sg, opts.Base)
+	if err != nil {
+		return nil, err
+	}
+	if res.NewBytes, err = checkPolicy(ctx, sg, objs, secrets, opts.Limits); err != nil {
 		return nil, err
 	}
 
@@ -124,11 +147,16 @@ func Create(ctx context.Context, repo string, opts Options) (*Result, error) {
 	if opts.Base != "" {
 		args = append(args, "--not", opts.Base)
 	}
-	if _, err := (git{dir: shadow, env: []string{"GIT_DIR=" + shadow}}).run(ctx, args...); err != nil {
+	if _, err := sg.run(ctx, args...); err != nil {
 		return nil, err
 	}
-	res.Size, res.SHA256, err = hashFile(res.BundlePath)
-	return res, err
+	if res.Size, res.SHA256, err = hashFile(res.BundlePath); err != nil {
+		return nil, err
+	}
+	if max := opts.Limits.MaxBundleBytes; max > 0 && res.Size > max {
+		return nil, &PolicyError{Code: CodeTooLarge, Message: fmt.Sprintf("bundle is %d bytes, over the %d-byte limit", res.Size, max)}
+	}
+	return res, nil
 }
 
 // ErrShallowBase means the repository is a shallow clone. Git can write a
@@ -194,12 +222,16 @@ func readHead(ctx context.Context, g git) (ref, commit string) {
 	return ref, commit
 }
 
-// stagedTree writes the user's staging area as a tree. It works on a copy of
-// the index because `git write-tree` may rewrite the index it reads. When
-// the index has unresolved conflicts it falls back to HEAD's tree.
-func stagedTree(ctx context.Context, g git, gitDir, workDir, head string) (tree, mode string, err error) {
+// stagedTree writes the user's staging area as a tree, minus dropped paths.
+// It works on a copy of the index because `git write-tree` may rewrite the
+// index it reads. When the index has unresolved conflicts it falls back to
+// HEAD's tree.
+func stagedTree(ctx context.Context, g git, gitDir, workDir, head string, drop func(string) bool) (tree, mode string, err error) {
 	idx := filepath.Join(workDir, "index.staged")
 	if err := copyIndex(filepath.Join(gitDir, "index"), idx); err != nil {
+		return "", "", err
+	}
+	if err := removeFromIndex(ctx, g.with("GIT_INDEX_FILE="+idx), drop); err != nil {
 		return "", "", err
 	}
 	tree, err = g.with("GIT_INDEX_FILE="+idx).run(ctx, "write-tree")
@@ -215,38 +247,48 @@ func stagedTree(ctx context.Context, g git, gitDir, workDir, head string) (tree,
 }
 
 // worktreeTree writes the working tree as a tree: every tracked or untracked
-// file that isn't gitignored, minus excluded paths (even tracked ones).
-func worktreeTree(ctx context.Context, g git, gitDir, workDir string, exclude []string) (string, error) {
+// file that isn't gitignored, minus dropped paths (even tracked ones).
+func worktreeTree(ctx context.Context, g git, gitDir, workDir string, exclude []string, drop func(string) bool) (string, error) {
 	idx := filepath.Join(workDir, "index.wip")
 	if err := copyIndex(filepath.Join(gitDir, "index"), idx); err != nil {
 		return "", err
 	}
 	g = g.with("GIT_INDEX_FILE=" + idx)
 
-	match := pathspecs(append([]string{MetaDir}, exclude...))
+	// The pathspec excludes keep `git add` from even hashing large dependency
+	// directories; removeFromIndex then applies the full rules.
 	add := []string{"add", "-A", "--", "."}
-	for _, p := range match {
+	for _, p := range pathspecs(append([]string{MetaDir}, exclude...)) {
 		add = append(add, ":(exclude,glob)"+p)
 	}
 	if _, err := g.run(ctx, add...); err != nil {
 		return "", err
 	}
-
-	// Excluded paths that were already tracked are still in the index copy.
-	ls := []string{"ls-files", "-z", "--cached", "--"}
-	for _, p := range match {
-		ls = append(ls, ":(glob)"+p)
-	}
-	tracked, err := g.run(ctx, ls...)
-	if err != nil {
+	metaOrDrop := func(p string) bool { return matchPath(MetaDir, p) || drop(p) }
+	if err := removeFromIndex(ctx, g, metaOrDrop); err != nil {
 		return "", err
 	}
-	if tracked != "" {
-		if _, err := g.runInput(ctx, []byte(tracked), "update-index", "-z", "--force-remove", "--stdin"); err != nil {
-			return "", err
+	return g.run(ctx, "write-tree")
+}
+
+// removeFromIndex deletes every entry for which drop returns true from the
+// index named by GIT_INDEX_FILE.
+func removeFromIndex(ctx context.Context, g git, drop func(string) bool) error {
+	out, err := g.raw(ctx, nil, "ls-files", "-z", "--cached")
+	if err != nil {
+		return err
+	}
+	var rm strings.Builder
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" && drop(p) {
+			rm.WriteString(p + "\x00")
 		}
 	}
-	return g.run(ctx, "write-tree")
+	if rm.Len() == 0 {
+		return nil
+	}
+	_, err = g.runInput(ctx, []byte(rm.String()), "update-index", "-z", "--force-remove", "--stdin")
+	return err
 }
 
 // pathspecs turns exclude patterns into glob pathspecs. A pattern without a

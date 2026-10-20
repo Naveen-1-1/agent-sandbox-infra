@@ -54,6 +54,17 @@ the working tree, then restores the staging area on top. Shallow clones always f
 base from origin, because git can't restore a bundle cut from a shallow repository into an
 empty one.
 
+Before writing the bundle, the snapshot checks exactly what it would carry: every object
+the base doesn't have. Known secret files (`.env`, keys, `.npmrc`, cloud and kube configs)
+are dropped from the working tree and staging area; templates like `.env.example` and
+public keys are kept. A secret file inside one of the agent's own commits fails the
+snapshot, because rewriting someone's history isn't safe. New files are scanned with
+high-confidence rules (private keys, AWS, GitHub, Slack, Google, Stripe, Anthropic and
+OpenAI keys). Size limits apply per file, to all new content, and to the bundle. Any
+violation returns a `PolicyError` naming the files (never the secret), and the workspace
+keeps running. Credentials embedded in a remote URL are used for fetching but never stored
+in the restored repository or shown in errors.
+
 ### Object store (`internal/objstore`)
 
 The small slice of S3 the platform uses. It covers immutable blobs written create-only
