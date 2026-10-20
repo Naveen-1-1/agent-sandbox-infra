@@ -20,10 +20,12 @@ linters:
       excludes:
         - G204 # we run git and child processes with validated arguments by design
         - G304 # file paths come from our own workspace layout
+        - G301 # workspace dirs must stay readable by the workload container (0755)
+        - G306 # workspace files must stay readable by the workload container (0644)
   exclusions:
     presets: [comments, std-error-handling]
     rules:
-      - path: _test\.go
+      - path: (_test\.go|internal/testutil/)
         linters: [gosec, noctx]
     paths:
       - gen/

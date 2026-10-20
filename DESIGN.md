@@ -18,7 +18,20 @@ server (sandboxd) and its Helm chart unmodified.
 
 ## Components
 
-*(filled in as each component lands)*
+### Snapshot (`internal/snapshot`)
+
+Turns a workspace into a git bundle and back. A snapshot is two synthetic commits laid out
+like `git stash`: one holds the working tree (tracked and untracked files, minus gitignored
+and excluded paths such as `.env`, keys and `node_modules`), the other holds the staging area.
+The bundle carries those commits plus every local branch and tag, minus anything the
+upstream base commit already has, so it contains only the agent's changes. Commits use a
+fixed author and the freeze time, so retrying a snapshot of the same state produces the same
+commit IDs. Snapshotting never writes to the user's `.git`: new objects go to a throwaway
+"shadow" repository that reads the user's objects through git alternates. Restore fetches the
+base (from a cached base bundle, or from origin), applies the bundle, puts HEAD back, writes
+the working tree, then restores the staging area on top. Shallow clones always fetch their
+base from origin, because git can't restore a bundle cut from a shallow repository into an
+empty one.
 
 ## Key decisions
 
