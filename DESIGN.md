@@ -65,6 +65,17 @@ violation returns a `PolicyError` naming the files (never the secret), and the w
 keeps running. Credentials embedded in a remote URL are used for fetching but never stored
 in the restored repository or shown in errors.
 
+### Snapshot store (`internal/snapstore`)
+
+Owns the S3 layout. `ws/<uid>/b/<sha256>.bundle` holds bundles, written once and content
+addressed. `bases/<url-hash>/<sha>.bundle` holds cached upstream bases. Each workspace has
+one `ws/<uid>/manifest.json` naming its latest committed snapshot. A commit states the
+sequence number it builds on. It first verifies the bundle is in S3 with the reported size
+and checksum, then replaces the manifest with a compare-and-swap. Retrying an attempt that
+already landed is a no-op. A commit that builds on an old sequence number, or comes from an
+older epoch (a stale pod), gets `ErrStale`, so a newer snapshot is never overwritten. With 16
+concurrent commits on SeaweedFS, exactly one wins.
+
 ### Object store (`internal/objstore`)
 
 The small slice of S3 the platform uses. It covers immutable blobs written create-only
