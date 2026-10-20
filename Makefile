@@ -4,6 +4,8 @@
 SHELL := /bin/bash
 GO    ?= go
 PKGS  ?= ./...
+# Developer tools are pinned in tools.mod and run through `go tool`.
+TOOL  := $(GO) tool -modfile=tools.mod
 
 .DEFAULT_GOAL := help
 
@@ -24,6 +26,14 @@ fmt: ## Format Go code.
 .PHONY: vet
 vet: ## Run go vet.
 	$(GO) vet $(PKGS)
+
+.PHONY: lint
+lint: ## Run golangci-lint.
+	$(TOOL) golangci-lint run $(PKGS)
+
+.PHONY: lint-fix
+lint-fix: ## Run golangci-lint and apply automatic fixes.
+	$(TOOL) golangci-lint run --fix $(PKGS)
 
 ##@ Test
 

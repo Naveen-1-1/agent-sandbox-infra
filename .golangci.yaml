@@ -1,0 +1,41 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags: [e2e]
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - unconvert
+  settings:
+    gosec:
+      excludes:
+        - G204 # we run git and child processes with validated arguments by design
+        - G304 # file paths come from our own workspace layout
+  exclusions:
+    presets: [comments, std-error-handling]
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx]
+    paths:
+      - gen/
+      - charts/
+      - web/
+      - extensions/
+
+formatters:
+  enable: [gofmt, goimports]
+  settings:
+    goimports:
+      local-prefixes: [github.com/Naveen-1-1/agent-sandbox-infra]
+  exclusions:
+    paths:
+      - gen/
