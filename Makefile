@@ -29,10 +29,20 @@ doctor: ## Check the local toolchain and Docker resources.
 
 CRD_DIR := charts/sbx/crds
 
+GENERATED := api gen $(CRD_DIR)
+
 .PHONY: gen
-gen: ## Regenerate deepcopy code and CRDs.
+gen: ## Regenerate deepcopy code, CRDs and gRPC stubs.
 	$(TOOL) controller-gen object paths=./api/...
 	$(TOOL) controller-gen crd paths=./api/... output:crd:dir=$(CRD_DIR)
+	$(TOOL) buf lint
+	$(TOOL) buf generate
+
+.PHONY: verify-gen
+verify-gen: gen ## Fail if generated files differ from what is committed.
+	@if [ -n "$$(git status --porcelain -- $(GENERATED))" ]; then \
+	  echo "generated files are out of date; run make gen and commit:"; \
+	  git status --porcelain -- $(GENERATED); exit 1; fi
 
 ##@ Quality
 

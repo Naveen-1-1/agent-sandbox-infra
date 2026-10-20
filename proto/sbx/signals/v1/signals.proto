@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package sbx.signals.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/signals/v1;signalsv1";
+
+// Signals are the raw inputs a sleep policy decides on. Each source (the
+// in-pod agent, every gateway replica) reports its own part; the controller
+// merges them.
+message Signals {
+  // Last real input from a user or agent. Heartbeats and health checks don't count.
+  google.protobuf.Timestamp last_activity = 1;
+  // Commands still running.
+  repeated Command running_commands = 2;
+  // Long-lived connections, counted by kind.
+  repeated Stream open_streams = 3;
+  // Requests waiting for the workspace to wake.
+  int32 held_requests = 4;
+  // Last time the agent finished a turn (turn-ended API).
+  google.protobuf.Timestamp last_turn_ended = 5;
+}
+
+// Command is a running process started through the platform.
+message Command {
+  string id = 1;
+  string command = 2;
+  CommandKind kind = 3;
+  google.protobuf.Timestamp started_at = 4;
+}
+
+// CommandKind says how a command was started.
+enum CommandKind {
+  COMMAND_KIND_UNSPECIFIED = 0;
+  // Started through the exec API, usually by the agent.
+  COMMAND_KIND_EXEC = 1;
+  // Typed into an editor terminal.
+  COMMAND_KIND_TERMINAL = 2;
+  // A declared long-running service such as a dev server.
+  COMMAND_KIND_SERVICE = 3;
+}
+
+// Stream counts open long-lived connections of one kind.
+message Stream {
+  StreamKind kind = 1;
+  int32 count = 2;
+}
+
+// StreamKind classifies long-lived connections.
+enum StreamKind {
+  STREAM_KIND_UNSPECIFIED = 0;
+  // An exec session's output stream.
+  STREAM_KIND_EXEC = 1;
+  // The editor's websocket. An idle open editor tab must not keep a workspace awake.
+  STREAM_KIND_EDITOR = 2;
+  // A websocket or streaming response to an app port (e.g. a dev server).
+  STREAM_KIND_APP = 3;
+}

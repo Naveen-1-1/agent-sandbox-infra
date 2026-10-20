@@ -1,0 +1,10 @@
+# Generate Go code with the plugins pinned in tools.mod (no remote plugins).
+version: v2
+clean: true
+plugins:
+  - local: ["go", "tool", "-modfile=tools.mod", "protoc-gen-go"]
+    out: gen/go
+    opt: paths=source_relative
+  - local: ["go", "tool", "-modfile=tools.mod", "protoc-gen-go-grpc"]
+    out: gen/go
+    opt: paths=source_relative

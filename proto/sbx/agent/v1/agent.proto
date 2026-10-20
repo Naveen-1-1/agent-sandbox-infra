@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package sbx.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+import "sbx/signals/v1/signals.proto";
+
+option go_package = "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/agent/v1;agentv1";
+
+// AgentService runs as PID 1 of the workload container, alongside upstream
+// sandboxd's exec and files APIs.
+service AgentService {
+  // Freeze rejects new exec and file calls and stops every workload process,
+  // so nothing writes while the snapshot is taken. If neither Thaw nor a new
+  // Freeze arrives before lease_until, the agent thaws itself.
+  rpc Freeze(FreezeRequest) returns (FreezeResponse);
+  // Thaw resumes the workload after an aborted suspend.
+  rpc Thaw(ThawRequest) returns (ThawResponse);
+  // GetSignals reports in-pod activity for the sleep policy.
+  rpc GetSignals(GetSignalsRequest) returns (GetSignalsResponse);
+  // StartService starts a declared long-running process (such as a dev
+  // server) and records it so it is restarted after every wake.
+  rpc StartService(StartServiceRequest) returns (StartServiceResponse);
+  // ListServices lists declared services and whether they run.
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
+  // StopService stops a service and forgets it.
+  rpc StopService(StopServiceRequest) returns (StopServiceResponse);
+}
+
+message FreezeRequest {
+  string attempt_id = 1;
+  google.protobuf.Timestamp lease_until = 2;
+}
+
+message FreezeResponse {
+  int32 stopped_processes = 1;
+}
+
+message ThawRequest {
+  string attempt_id = 1;
+}
+
+message ThawResponse {}
+
+message GetSignalsRequest {}
+
+message GetSignalsResponse {
+  sbx.signals.v1.Signals signals = 1;
+  bool frozen = 2;
+}
+
+// Service is a declared long-running process.
+message Service {
+  string name = 1;
+  repeated string command = 2;
+  string cwd = 3;
+  map<string, string> env = 4;
+  // Wait for dependency restore before starting after a wake.
+  bool needs_deps = 5;
+}
+
+// ServiceStatus is a service and its current state.
+message ServiceStatus {
+  Service service = 1;
+  bool running = 2;
+  int32 pid = 3;
+  int32 restarts = 4;
+  google.protobuf.Timestamp started_at = 5;
+}
+
+message StartServiceRequest {
+  Service service = 1;
+}
+
+message StartServiceResponse {
+  ServiceStatus status = 1;
+}
+
+message ListServicesRequest {}
+
+message ListServicesResponse {
+  repeated ServiceStatus services = 1;
+}
+
+message StopServiceRequest {
+  string name = 1;
+}
+
+message StopServiceResponse {}

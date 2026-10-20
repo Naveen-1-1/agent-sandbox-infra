@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package sbx.gateway.v1;
+
+import "google/protobuf/timestamp.proto";
+import "sbx/signals/v1/signals.proto";
+
+option go_package = "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/gateway/v1;gatewayv1";
+
+// GatewaySignalsService lets the controller collect traffic signals from each
+// gateway replica in one batched call per replica.
+service GatewaySignalsService {
+  rpc GetWorkspaceSignals(GetWorkspaceSignalsRequest) returns (GetWorkspaceSignalsResponse);
+}
+
+message GetWorkspaceSignalsRequest {
+  // Workspaces as "namespace/name". Empty means every workspace this
+  // replica has seen traffic for.
+  repeated string workspaces = 1;
+}
+
+message GetWorkspaceSignalsResponse {
+  map<string, sbx.signals.v1.Signals> signals = 1;
+  google.protobuf.Timestamp collected_at = 2;
+  // When this replica started. A replica younger than the idle window has
+  // an incomplete view, and the controller treats its silence as unknown.
+  google.protobuf.Timestamp started_at = 3;
+}

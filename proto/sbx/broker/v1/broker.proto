@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package sbx.broker.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/broker/v1;brokerv1";
+
+// BrokerService gives workspace pods short-lived presigned URLs for their own
+// workspace's objects, so pods never hold S3 credentials. Every call carries
+// the pod's per-epoch token as "authorization: Bearer <token>"; the token
+// names the workspace and epoch, and tokens from older epochs are refused.
+service BrokerService {
+  // GetRestorePlan says where this epoch's files come from.
+  rpc GetRestorePlan(GetRestorePlanRequest) returns (GetRestorePlanResponse);
+  // PresignSnapshotUpload returns a create-only, checksum-checked upload URL
+  // for a snapshot bundle. Bundles over the size limit are refused here.
+  rpc PresignSnapshotUpload(PresignSnapshotUploadRequest) returns (PresignSnapshotUploadResponse);
+  // PresignBaseUpload returns a create-only upload URL for the base bundle.
+  rpc PresignBaseUpload(PresignBaseUploadRequest) returns (PresignBaseUploadResponse);
+  // LookupDeps reports which dependency archives are cached, with download URLs.
+  rpc LookupDeps(LookupDepsRequest) returns (LookupDepsResponse);
+  // PresignDepsUpload returns a create-only upload URL for a dependency archive.
+  rpc PresignDepsUpload(PresignDepsUploadRequest) returns (PresignDepsUploadResponse);
+}
+
+// PresignedRequest is an HTTP request the pod must send exactly as given.
+message PresignedRequest {
+  string method = 1;
+  string url = 2;
+  // Headers that are part of the signature.
+  map<string, string> headers = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  string key = 5;
+}
+
+message GetRestorePlanRequest {}
+
+message GetRestorePlanResponse {
+  // Upstream repository, set as the "origin" remote.
+  string origin_url = 1;
+  // Upstream commit the workspace started from.
+  string base_sha = 2;
+  // Branch created at base_sha for a fresh workspace.
+  string branch = 3;
+  // Shallow-clone depth when fetching base_sha from origin (0 = full history).
+  int32 depth = 4;
+  // Cached bundle of base_sha. Unset: fetch base_sha from origin.
+  PresignedRequest base_bundle = 5;
+  // Snapshot to apply. Unset: check out base_sha on a new branch.
+  PresignedRequest snapshot_bundle = 6;
+  string snapshot_sha256 = 7;
+  // No base bundle is cached yet; upload one after cloning.
+  bool upload_base = 8;
+}
+
+message PresignSnapshotUploadRequest {
+  string attempt_id = 1;
+  string sha256 = 2;
+  int64 size_bytes = 3;
+}
+
+message PresignSnapshotUploadResponse {
+  PresignedRequest upload = 1;
+  // An identical bundle is already stored; skip the upload.
+  bool already_exists = 2;
+}
+
+message PresignBaseUploadRequest {
+  string sha256 = 1;
+  int64 size_bytes = 2;
+}
+
+message PresignBaseUploadResponse {
+  PresignedRequest upload = 1;
+  bool already_exists = 2;
+}
+
+// DepsKey identifies a dependency archive.
+message DepsKey {
+  // Dependency profile, for example "npm".
+  string profile = 1;
+  // SHA-256 over the profile, lockfile, package-manager version, image and arch.
+  string key = 2;
+  // Directory the archive restores, relative to the workspace.
+  string path = 3;
+}
+
+message LookupDepsRequest {
+  repeated DepsKey keys = 1;
+}
+
+message LookupDepsResponse {
+  repeated DepsEntry entries = 1;
+}
+
+// DepsEntry is one cache lookup result.
+message DepsEntry {
+  DepsKey key = 1;
+  bool hit = 2;
+  // Set on a hit.
+  PresignedRequest download = 3;
+  string sha256 = 4;
+}
+
+message PresignDepsUploadRequest {
+  DepsKey key = 1;
+  string sha256 = 2;
+  int64 size_bytes = 3;
+}
+
+message PresignDepsUploadResponse {
+  PresignedRequest upload = 1;
+  bool already_exists = 2;
+}

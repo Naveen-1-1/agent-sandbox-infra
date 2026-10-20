@@ -28,6 +28,17 @@ bumps to ask for a wake (the API rejects decreases). The controller owns all of 
 `phase`, `epoch` (one per wake, naming that wake's pod, disk and tokens), the in-progress
 suspend or wake, the last committed snapshot, and a per-stage wake timeline.
 
+### gRPC contracts (`proto/sbx`, generated into `gen/go`)
+
+Components talk over gRPC; the Kubernetes API holds the durable state. The controller drives
+each pod's **sidecar** (start or rejoin a snapshot by attempt ID, identify the pod's epoch,
+stream restore milestones) and **agent** (freeze, thaw, report activity, run declared
+services). Pods call the **broker** with a per-epoch token to get presigned URLs for their
+own workspace's objects only. The controller asks each **gateway** replica for traffic
+signals in one batched call. The shared `Signals` message is the policy's input: activity,
+running commands, open streams by kind, held requests and turn-ended. Code is generated with
+buf and plugins pinned in `tools.mod`; `make verify-gen` fails if it is stale.
+
 ### Snapshot (`internal/snapshot`)
 
 Turns a workspace into a git bundle and back. A snapshot is two synthetic commits laid out

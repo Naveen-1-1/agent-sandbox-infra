@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+package sbx.sidecar.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1;sidecarv1";
+
+// SidecarService runs in every workspace pod next to the workload. The
+// controller calls it; each call carries the controller's per-epoch token.
+service SidecarService {
+  // Identify reports which workspace epoch and pod this sidecar serves.
+  rpc Identify(IdentifyRequest) returns (IdentifyResponse);
+  // StartSnapshot starts a snapshot attempt, or returns the attempt that
+  // already has this attempt_id. The workload must already be frozen.
+  rpc StartSnapshot(StartSnapshotRequest) returns (StartSnapshotResponse);
+  // GetSnapshot reports an attempt's progress and result.
+  rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
+  // WatchProgress streams restore milestones for the wake timeline. Stages
+  // already reached are sent first.
+  rpc WatchProgress(WatchProgressRequest) returns (stream WatchProgressResponse);
+}
+
+message IdentifyRequest {}
+
+message IdentifyResponse {
+  string workspace_uid = 1;
+  int64 epoch = 2;
+  string pod_uid = 3;
+  VolumeState volume_state = 4;
+}
+
+// VolumeState is the restore state recorded on the workspace disk.
+enum VolumeState {
+  VOLUME_STATE_UNSPECIFIED = 0;
+  // A restore was started and has not finished.
+  VOLUME_STATE_RESTORING = 1;
+  // Files are restored; the disk holds live user work and is never restored over.
+  VOLUME_STATE_LIVE = 2;
+}
+
+message StartSnapshotRequest {
+  string attempt_id = 1;
+  int64 epoch = 2;
+  // Stamps the snapshot commits, so a retry produces the same commit IDs.
+  google.protobuf.Timestamp freeze_time = 3;
+  // Upstream commit whose objects are left out of the bundle.
+  string base_sha = 4;
+}
+
+message StartSnapshotResponse {
+  Snapshot snapshot = 1;
+}
+
+message GetSnapshotRequest {
+  string attempt_id = 1;
+}
+
+message GetSnapshotResponse {
+  Snapshot snapshot = 1;
+}
+
+// Snapshot is the state of one snapshot attempt.
+message Snapshot {
+  string attempt_id = 1;
+  SnapshotState state = 2;
+  // Commit holding the working tree.
+  string wip_sha = 3;
+  // Commit holding the staging area.
+  string index_sha = 4;
+  // Symbolic HEAD, empty if detached.
+  string head = 5;
+  // S3 key the bundle was uploaded to (content addressed).
+  string bundle_key = 6;
+  // Hex SHA-256 of the bundle.
+  string sha256 = 7;
+  int64 size_bytes = 8;
+  SnapshotError error = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp finished_at = 11;
+}
+
+// SnapshotState is where a snapshot attempt is.
+enum SnapshotState {
+  SNAPSHOT_STATE_UNSPECIFIED = 0;
+  SNAPSHOT_STATE_RUNNING = 1;
+  SNAPSHOT_STATE_SUCCEEDED = 2;
+  SNAPSHOT_STATE_FAILED = 3;
+}
+
+// SnapshotError explains a failed attempt. The workspace keeps running.
+message SnapshotError {
+  SnapshotErrorCode code = 1;
+  string message = 2;
+  // Offending paths, for secrets and size limits. Never secret values.
+  repeated string paths = 3;
+}
+
+// SnapshotErrorCode classifies snapshot failures.
+enum SnapshotErrorCode {
+  SNAPSHOT_ERROR_CODE_UNSPECIFIED = 0;
+  // A new file or commit looks like it contains a secret.
+  SNAPSHOT_ERROR_CODE_SECRET_DETECTED = 1;
+  // A file, the working tree or the bundle is over its size limit.
+  SNAPSHOT_ERROR_CODE_TOO_LARGE = 2;
+  // The bundle could not be uploaded.
+  SNAPSHOT_ERROR_CODE_UPLOAD_FAILED = 3;
+  // A git command failed.
+  SNAPSHOT_ERROR_CODE_GIT_FAILED = 4;
+  SNAPSHOT_ERROR_CODE_INTERNAL = 5;
+}
+
+message WatchProgressRequest {}
+
+message WatchProgressResponse {
+  Stage stage = 1;
+  google.protobuf.Timestamp at = 2;
+  string detail = 3;
+  // Bytes downloaded for this stage.
+  int64 bytes = 4;
+}
+
+// Stage is a restore milestone.
+enum Stage {
+  STAGE_UNSPECIFIED = 0;
+  // Workspace files are restored; the workload can start.
+  STAGE_FILES_READY = 1;
+  // Dependency directories are restored (from cache or a fresh install).
+  STAGE_DEPS_READY = 2;
+  // Dependency restore failed; commands run without waiting.
+  STAGE_DEPS_FAILED = 3;
+}
