@@ -157,7 +157,7 @@ func (s *Snapshotter) run(id, base string, freeze time.Time) {
 	key := u.GetKey()
 	s.finish(id, &sidecarv1.Snapshot{
 		WipSha: res.WIP, IndexSha: res.Index, Head: res.Head,
-		BundleKey: key, Sha256: res.SHA256, SizeBytes: res.Size,
+		BundleKey: key, Sha256: res.SHA256, SizeBytes: res.Size, NewBytes: res.NewBytes,
 	}, nil)
 }
 

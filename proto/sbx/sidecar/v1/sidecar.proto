@@ -78,6 +78,8 @@ message Snapshot {
   SnapshotError error = 9;
   google.protobuf.Timestamp started_at = 10;
   google.protobuf.Timestamp finished_at = 11;
+  // Uncompressed size of the files new since the base.
+  int64 new_bytes = 12;
 }
 
 // SnapshotState is where a snapshot attempt is.

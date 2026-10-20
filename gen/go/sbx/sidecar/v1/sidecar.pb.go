@@ -566,11 +566,13 @@ type Snapshot struct {
 	// S3 key the bundle was uploaded to (content addressed).
 	BundleKey string `protobuf:"bytes,6,opt,name=bundle_key,json=bundleKey,proto3" json:"bundle_key,omitempty"`
 	// Hex SHA-256 of the bundle.
-	Sha256        string                 `protobuf:"bytes,7,opt,name=sha256,proto3" json:"sha256,omitempty"`
-	SizeBytes     int64                  `protobuf:"varint,8,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
-	Error         *SnapshotError         `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
-	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	FinishedAt    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	Sha256     string                 `protobuf:"bytes,7,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	SizeBytes  int64                  `protobuf:"varint,8,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	Error      *SnapshotError         `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
+	StartedAt  *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	// Uncompressed size of the files new since the base.
+	NewBytes      int64 `protobuf:"varint,12,opt,name=new_bytes,json=newBytes,proto3" json:"new_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -680,6 +682,13 @@ func (x *Snapshot) GetFinishedAt() *timestamppb.Timestamp {
 		return x.FinishedAt
 	}
 	return nil
+}
+
+func (x *Snapshot) GetNewBytes() int64 {
+	if x != nil {
+		return x.NewBytes
+	}
+	return 0
 }
 
 // SnapshotError explains a failed attempt. The workspace keeps running.
@@ -873,7 +882,7 @@ const file_sbx_sidecar_v1_sidecar_proto_rawDesc = "" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\"K\n" +
 	"\x13GetSnapshotResponse\x124\n" +
-	"\bsnapshot\x18\x01 \x01(\v2\x18.sbx.sidecar.v1.SnapshotR\bsnapshot\"\xab\x03\n" +
+	"\bsnapshot\x18\x01 \x01(\v2\x18.sbx.sidecar.v1.SnapshotR\bsnapshot\"\xc8\x03\n" +
 	"\bSnapshot\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x123\n" +
@@ -891,7 +900,8 @@ const file_sbx_sidecar_v1_sidecar_proto_rawDesc = "" +
 	"started_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
 	"\vfinished_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"finishedAt\"v\n" +
+	"finishedAt\x12\x1b\n" +
+	"\tnew_bytes\x18\f \x01(\x03R\bnewBytes\"v\n" +
 	"\rSnapshotError\x125\n" +
 	"\x04code\x18\x01 \x01(\x0e2!.sbx.sidecar.v1.SnapshotErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +
