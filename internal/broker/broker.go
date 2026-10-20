@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	brokerv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/broker/v1"
@@ -257,4 +258,17 @@ func isSHA256(s string) bool {
 		}
 	}
 	return true
+}
+
+// KubeWorkspaces reads Workspaces straight from the API server (no cache), so
+// an epoch change is visible to the broker immediately.
+type KubeWorkspaces struct{ Reader client.Reader }
+
+// Get implements Workspaces.
+func (k KubeWorkspaces) Get(ctx context.Context, namespace, name string) (*sbxv1.Workspace, error) {
+	ws := &sbxv1.Workspace{}
+	if err := k.Reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, ws); err != nil {
+		return nil, err
+	}
+	return ws, nil
 }
