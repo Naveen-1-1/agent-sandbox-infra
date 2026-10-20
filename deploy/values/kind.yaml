@@ -6,3 +6,5 @@ s3local:
   enabled: true
 fixtures:
   enabled: true
+repositories:
+  allowPrivateHosts: true # the fixtures git server is in-cluster

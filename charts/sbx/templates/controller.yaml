@@ -48,9 +48,24 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ include "sbx.s3Secret" . }}, key: accessKey}}
             - name: SBX_S3_SECRET_KEY
               valueFrom: {secretKeyRef: {name: {{ include "sbx.s3Secret" . }}, key: secretKey}}
-            # Workspace pod settings, consumed by the reconciler.
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - {name: SBX_LEADER_ELECT, value: {{ .Values.controller.leaderElect | quote }}}
+            - {name: SBX_MAX_CONCURRENT_RECONCILES, value: {{ .Values.controller.maxConcurrentReconciles | quote }}}
+            - {name: SBX_ALLOW_PRIVATE_REPOS, value: {{ .Values.repositories.allowPrivateHosts | quote }}}
+            # Workspace pods.
             - {name: SBX_RUNTIME_IMAGE, value: {{ include "sbx.image" (dict "root" . "image" .Values.images.runtime "name" "runtime") | quote }}}
             - {name: SBX_BROKER_ADDR, value: {{ include "sbx.brokerAddr" . | quote }}}
+            - {name: SBX_PULL_POLICY, value: {{ .Values.global.imagePullPolicy | quote }}}
+            - {name: SBX_DEFAULT_IMAGE, value: {{ .Values.workspace.defaultImage | quote }}}
+            - {name: SBX_RUN_AS_USER, value: {{ .Values.workspace.runAsUser | quote }}}
+            - {name: SBX_RUN_AS_GROUP, value: {{ .Values.workspace.runAsGroup | quote }}}
+            - {name: SBX_STORAGE_SIZE, value: {{ .Values.workspace.storage.size | quote }}}
+            - {name: SBX_STORAGE_CLASS, value: {{ .Values.workspace.storage.storageClassName | quote }}}
+            - {name: SBX_WORKSPACE_RESOURCES, value: {{ toJson .Values.workspace.resources | quote }}}
+            - {name: SBX_SNAPSHOT_EXCLUDE, value: {{ join "," .Values.workspace.snapshot.exclude | quote }}}
+            - {name: SBX_SNAPSHOT_MAX_FILE_BYTES, value: {{ int64 .Values.workspace.snapshot.maxFileBytes | quote }}}
+            - {name: SBX_SNAPSHOT_MAX_NEW_BYTES, value: {{ int64 .Values.workspace.snapshot.maxNewBytes | quote }}}
           ports:
             - {name: broker, containerPort: {{ .Values.controller.brokerPort }}}
             - {name: metrics, containerPort: {{ .Values.controller.metricsPort }}}
@@ -68,7 +83,10 @@ spec:
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: master-key, mountPath: /var/run/sbx/master-key, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: master-key
           secret: {secretName: {{ include "sbx.signingSecret" . }}, defaultMode: 0440}
 ---

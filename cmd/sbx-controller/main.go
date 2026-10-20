@@ -1,33 +1,42 @@
-// Command sbx-controller runs the platform's control plane. Today it serves
-// the broker that presigns workspace objects for pods; the Workspace
-// reconciler joins it next.
+// Command sbx-controller runs the platform's control plane: the Workspace
+// controller (on the elected leader) and the broker that presigns workspace
+// objects for pods (on every replica).
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	sbv1 "sigs.k8s.io/agent-sandbox/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/broker"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/workspace"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/objstore"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapstore"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/token"
 )
 
@@ -38,6 +47,11 @@ type options struct {
 	createBucket                        bool
 	maxBundleBytes                      int64
 	presignTTL                          time.Duration
+	leaderElect                         bool
+	allowPrivateRepos                   bool
+	ws                                  workspace.Config
+	storageSize, workspaceResources     string
+	snapshotExclude                     string
 }
 
 func main() {
@@ -46,18 +60,36 @@ func main() {
 	flag.StringVar(&o.healthAddr, "health-addr", ":8081", "health probe listen address")
 	flag.StringVar(&o.metricsAddr, "metrics-addr", ":8080", "Prometheus metrics listen address")
 	flag.StringVar(&o.masterKeyFile, "master-key-file", "/var/run/sbx/master-key/key", "file holding the token master key")
+	flag.BoolVar(&o.leaderElect, "leader-elect", envBool("SBX_LEADER_ELECT", true), "elect a leader so one replica runs the controller")
+
 	flag.StringVar(&o.s3.Endpoint, "s3-endpoint", os.Getenv("SBX_S3_ENDPOINT"), "S3 endpoint URL (empty for AWS)")
-	flag.StringVar(&o.s3.PresignEndpoint, "s3-presign-endpoint", os.Getenv("SBX_S3_PRESIGN_ENDPOINT"), "endpoint used in presigned URLs (default: s3-endpoint)")
+	flag.StringVar(&o.s3.PresignEndpoint, "s3-presign-endpoint", os.Getenv("SBX_S3_PRESIGN_ENDPOINT"), "endpoint in presigned URLs (default: s3-endpoint)")
 	flag.StringVar(&o.s3.Region, "s3-region", envOr("SBX_S3_REGION", "us-east-1"), "S3 region")
 	flag.StringVar(&o.s3.Bucket, "s3-bucket", os.Getenv("SBX_S3_BUCKET"), "S3 bucket")
-	flag.BoolVar(&o.s3.PathStyle, "s3-path-style", os.Getenv("SBX_S3_PATH_STYLE") == "true", "use path-style S3 URLs")
-	flag.BoolVar(&o.createBucket, "s3-create-bucket", os.Getenv("SBX_S3_CREATE_BUCKET") == "true", "create the bucket at startup if missing")
+	flag.BoolVar(&o.s3.PathStyle, "s3-path-style", envBool("SBX_S3_PATH_STYLE", false), "use path-style S3 URLs")
+	flag.BoolVar(&o.createBucket, "s3-create-bucket", envBool("SBX_S3_CREATE_BUCKET", false), "create the bucket at startup if missing")
 	flag.Int64Var(&o.maxBundleBytes, "max-bundle-bytes", 500<<20, "largest snapshot bundle accepted")
 	flag.DurationVar(&o.presignTTL, "presign-ttl", 15*time.Minute, "lifetime of presigned URLs")
+
+	flag.StringVar(&o.ws.RuntimeImage, "runtime-image", os.Getenv("SBX_RUNTIME_IMAGE"), "sbx-runtime image for workspace pods")
+	flag.StringVar(&o.ws.BrokerAddr, "pod-broker-addr", os.Getenv("SBX_BROKER_ADDR"), "broker address as workspace pods reach it")
+	flag.StringVar(&o.ws.DefaultImage, "default-image", envOr("SBX_DEFAULT_IMAGE", "mcr.microsoft.com/devcontainers/base:trixie"), "workload image when none is chosen")
+	flag.Int64Var(&o.ws.RunAsUser, "run-as-user", envInt("SBX_RUN_AS_USER", 1000), "UID for workspace containers")
+	flag.Int64Var(&o.ws.RunAsGroup, "run-as-group", envInt("SBX_RUN_AS_GROUP", 1000), "GID for workspace containers")
+	flag.StringVar(&o.storageSize, "storage-size", envOr("SBX_STORAGE_SIZE", "5Gi"), "workspace disk size")
+	flag.StringVar(&o.ws.StorageClassName, "storage-class", os.Getenv("SBX_STORAGE_CLASS"), "workspace disk storage class (empty = default)")
+	flag.StringVar(&o.workspaceResources, "workspace-resources", os.Getenv("SBX_WORKSPACE_RESOURCES"), "workload container resources as JSON")
+	flag.StringVar(&o.snapshotExclude, "snapshot-exclude", envOr("SBX_SNAPSHOT_EXCLUDE", "node_modules,.venv"), "comma-separated paths never snapshotted")
+	flag.Int64Var(&o.ws.Snapshot.MaxFileBytes, "snapshot-max-file-bytes", envInt("SBX_SNAPSHOT_MAX_FILE_BYTES", 50<<20), "largest new file in a snapshot")
+	flag.Int64Var(&o.ws.Snapshot.MaxNewBytes, "snapshot-max-new-bytes", envInt("SBX_SNAPSHOT_MAX_NEW_BYTES", 500<<20), "largest total new content in a snapshot")
+	flag.BoolVar(&o.allowPrivateRepos, "allow-private-repos", envBool("SBX_ALLOW_PRIVATE_REPOS", false), "allow source repositories on private addresses")
+	flag.IntVar(&o.ws.MaxConcurrent, "max-concurrent-reconciles", int(envInt("SBX_MAX_CONCURRENT_RECONCILES", 16)), "parallel workspace reconciles")
 	flag.Parse()
 	o.s3.AccessKey, o.s3.SecretKey = os.Getenv("SBX_S3_ACCESS_KEY"), os.Getenv("SBX_S3_SECRET_KEY")
+	o.ws.PullPolicy = corev1.PullPolicy(envOr("SBX_PULL_POLICY", string(corev1.PullIfNotPresent)))
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("component", "sbx-controller")
+	ctrllog.SetLogger(logr.FromSlogHandler(log.Handler()))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	if err := run(ctx, o, log); err != nil {
@@ -75,6 +107,20 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if o.ws.StorageSize, err = resource.ParseQuantity(o.storageSize); err != nil {
+		return fmt.Errorf("storage size: %w", err)
+	}
+	if o.workspaceResources != "" {
+		if err := json.Unmarshal([]byte(o.workspaceResources), &o.ws.Resources); err != nil {
+			return fmt.Errorf("workspace resources: %w", err)
+		}
+	}
+	o.ws.Snapshot.Exclude = splitList(o.snapshotExclude)
+	o.ws.Snapshot.MaxBundleBytes = o.maxBundleBytes
+	if o.ws.RuntimeImage == "" || o.ws.BrokerAddr == "" {
+		return errors.New("--runtime-image and --pod-broker-addr are required")
+	}
+
 	store, err := objstore.NewS3(o.s3)
 	if err != nil {
 		return err
@@ -86,55 +132,88 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 	}
 
 	scheme := runtime.NewScheme()
-	if err := sbxv1.AddToScheme(scheme); err != nil {
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sbv1.AddToScheme, sbxv1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			return err
+		}
+	}
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:                        scheme,
+		Metrics:                       metricsserver.Options{BindAddress: o.metricsAddr},
+		HealthProbeBindAddress:        o.healthAddr,
+		LeaderElection:                o.leaderElect,
+		LeaderElectionID:              "sbx-controller.sbx.dev",
+		LeaderElectionNamespace:       os.Getenv("POD_NAMESPACE"),
+		LeaderElectionReleaseOnCancel: true,
+	})
+	if err != nil {
 		return err
 	}
-	kube, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
-	if err != nil {
+	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {
+		return err
+	}
+	if err := mgr.AddReadyzCheck("ping", healthz.Ping); err != nil {
+		return err
+	}
+
+	wsMetrics := metrics.NewWorkspace(ctrlmetrics.Registry, func(ctx context.Context) (map[string]int, error) {
+		list := &sbxv1.WorkspaceList{}
+		if err := mgr.GetClient().List(ctx, list); err != nil {
+			return nil, err
+		}
+		counts := map[string]int{}
+		for _, ws := range list.Items {
+			counts[string(ws.Status.Phase)]++
+		}
+		return counts, nil
+	})
+	r := &workspace.Reconciler{
+		Client: mgr.GetClient(), API: mgr.GetAPIReader(), Scheme: scheme, Keys: keys,
+		Store: snapstore.New(store), Objects: store, Pods: workspace.GRPCPods{Keys: keys},
+		Inspector: workspace.GitInspector{AllowPrivateHosts: o.allowPrivateRepos},
+		Metrics:   wsMetrics, Snapshots: metrics.NewSnapshot(ctrlmetrics.Registry),
+		Config: o.ws,
+	}
+	if err := r.SetupWithManager(mgr); err != nil {
 		return err
 	}
 
 	b := broker.New(broker.Config{
-		Keyring: keys, Store: store, Workspaces: broker.KubeWorkspaces{Reader: kube},
+		Keyring: keys, Store: store, Workspaces: broker.KubeWorkspaces{Reader: mgr.GetAPIReader()},
 		PresignTTL: o.presignTTL, MaxBundleBytes: o.maxBundleBytes,
 	})
-	g := grpc.NewServer(grpc.ChainUnaryInterceptor(b.UnaryInterceptor()))
-	b.Register(g)
+	if err := mgr.Add(&brokerServer{addr: o.brokerAddr, b: b, log: log}); err != nil {
+		return err
+	}
+	log.Info("starting", "broker", o.brokerAddr, "bucket", o.s3.Bucket, "runtimeImage", o.ws.RuntimeImage)
+	return mgr.Start(ctx)
+}
 
-	reg := prometheus.NewRegistry()
-	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+// brokerServer runs the broker on every replica, leader or not.
+type brokerServer struct {
+	addr string
+	b    *broker.Server
+	log  *slog.Logger
+}
 
+func (s *brokerServer) NeedLeaderElection() bool { return false }
+
+func (s *brokerServer) Start(ctx context.Context) error {
 	var lc net.ListenConfig
-	bl, err := lc.Listen(ctx, "tcp", o.brokerAddr)
+	l, err := lc.Listen(ctx, "tcp", s.addr)
 	if err != nil {
 		return err
 	}
-	health := &http.Server{Addr: o.healthAddr, ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(
-		func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })}
-	metrics := &http.Server{Addr: o.metricsAddr, ReadHeaderTimeout: 5 * time.Second,
-		Handler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{})}
-
-	errc := make(chan error, 3)
-	go func() { errc <- g.Serve(bl) }()
-	for _, s := range []*http.Server{health, metrics} {
-		go func() {
-			if err := s.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-				errc <- err
-			}
-		}()
+	g := grpc.NewServer(grpc.ChainUnaryInterceptor(s.b.UnaryInterceptor()))
+	s.b.Register(g)
+	go func() {
+		<-ctx.Done()
+		g.GracefulStop()
+	}()
+	if err := g.Serve(l); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+		return err
 	}
-	log.Info("controller serving", "broker", o.brokerAddr, "bucket", o.s3.Bucket)
-
-	select {
-	case <-ctx.Done():
-	case err = <-errc:
-	}
-	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	g.GracefulStop()
-	_ = health.Shutdown(shutdown)
-	_ = metrics.Shutdown(shutdown)
-	return err
+	return nil
 }
 
 func envOr(key, def string) string {
@@ -142,4 +221,28 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func envBool(key string, def bool) bool {
+	if v, err := strconv.ParseBool(os.Getenv(key)); err == nil {
+		return v
+	}
+	return def
+}
+
+func envInt(key string, def int64) int64 {
+	if v, err := strconv.ParseInt(os.Getenv(key), 10, 64); err == nil {
+		return v
+	}
+	return def
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

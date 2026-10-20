@@ -16,6 +16,8 @@ images:
 
 controller:
   replicas: 1
+  leaderElect: true
+  maxConcurrentReconciles: 16
   brokerPort: 9443
   metricsPort: 8080
   healthPort: 8081
@@ -41,11 +43,20 @@ s3:
   # Secret with keys accessKey and secretKey. Empty with s3local.enabled uses its generated Secret.
   existingSecret: ""
 
+# Source repositories.
+repositories:
+  # Allow repositories on private, loopback or link-local addresses. Off by
+  # default so a workspace can't make the controller probe internal services.
+  allowPrivateHosts: false
+
 # Defaults for workspace pods.
 workspace:
   defaultImage: mcr.microsoft.com/devcontainers/base:trixie
   runAsUser: 1000
   runAsGroup: 1000
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 4Gi}
   storage:
     size: 5Gi
     storageClassName: "" # empty = cluster default
