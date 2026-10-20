@@ -137,8 +137,9 @@ func TestWorkspacePodSleepsAndWakesByHand(t *testing.T) {
 	ctx := framework.Ctx(t, 10*time.Minute)
 	base := fixtureHead(t, "hello-node")
 
+	// Paused: this test plays the controller's part itself.
 	ws := &sbxv1.Workspace{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "demo"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "demo", Annotations: map[string]string{sbxv1.AnnotationPaused: "true"}},
 		Spec:       sbxv1.WorkspaceSpec{Source: sbxv1.Source{RepoURL: p.FixturesURL + "/hello-node.git"}},
 	}
 	if err := c.CR.Create(ctx, ws); err != nil {
