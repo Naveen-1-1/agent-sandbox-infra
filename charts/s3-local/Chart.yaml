@@ -1,0 +1,6 @@
+apiVersion: v2
+name: s3-local
+description: Single-pod SeaweedFS S3 endpoint for local development. Use a real S3 service elsewhere.
+type: application
+version: 0.1.0
+appVersion: "4.48"

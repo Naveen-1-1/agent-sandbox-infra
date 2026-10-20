@@ -78,3 +78,11 @@ deploy-upstream: ## Install only the vendored agent-sandbox controller (used by 
 	helm upgrade --install agent-sandbox charts/agent-sandbox \
 	  --namespace agent-sandbox-system --create-namespace \
 	  --set namespace.create=false --set image.tag=v1.0.7 --wait --timeout 3m
+
+.PHONY: test-e2e
+test-e2e: ## Run end-to-end tests on the kind cluster (RUN=<regex> to filter).
+	$(GO) test -tags e2e -count=1 -p 1 -timeout 20m ./test/e2e/... $(if $(RUN),-run '$(RUN)') -v
+
+.PHONY: deploy-s3-local
+deploy-s3-local: ## Install only the local SeaweedFS S3 endpoint (used by spikes and e2e).
+	helm upgrade --install sbx charts/s3-local --namespace sbx-system --create-namespace --wait --timeout 3m

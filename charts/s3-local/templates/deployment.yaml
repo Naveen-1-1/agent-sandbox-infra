@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "s3-local.name" . }}
+  labels: {{- include "s3-local.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # one writer per volume
+  selector:
+    matchLabels: {{- include "s3-local.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "s3-local.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        # SeaweedFS reads identities from a JSON file; build it from the Secret.
+        - name: s3-config
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - >-
+              printf '{"identities":[{"name":"sbx","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}'
+              "$ACCESS_KEY" "$SECRET_KEY" > /etc/seaweedfs/s3.json
+          env:
+            - name: ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: {{ include "s3-local.secretName" . }}, key: accessKey}}
+            - name: SECRET_KEY
+              valueFrom: {secretKeyRef: {name: {{ include "s3-local.secretName" . }}, key: secretKey}}
+          volumeMounts:
+            - {name: config, mountPath: /etc/seaweedfs}
+      containers:
+        - name: seaweedfs
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - mini
+            - -dir=/data
+            - -ip=$(POD_IP)
+            - -ip.bind=0.0.0.0
+            - -s3.port={{ .Values.service.port }}
+            - -s3.config=/etc/seaweedfs/s3.json
+            - -bucket={{ .Values.bucket }}
+            - -metricsPort={{ .Values.metrics.port }}
+            - -admin.ui=false
+            - -webdav=false
+            - -s3.port.iceberg=0
+            - -s3.port.lance=0
+          env:
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+          ports:
+            - {name: s3, containerPort: {{ .Values.service.port }}}
+            - {name: metrics, containerPort: {{ .Values.metrics.port }}}
+          readinessProbe:
+            tcpSocket: {port: s3}
+            periodSeconds: 2
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: config, mountPath: /etc/seaweedfs, readOnly: true}
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim: {claimName: {{ include "s3-local.name" . }}-data}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

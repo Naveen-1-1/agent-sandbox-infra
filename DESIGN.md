@@ -33,6 +33,16 @@ the working tree, then restores the staging area on top. Shallow clones always f
 base from origin, because git can't restore a bundle cut from a shallow repository into an
 empty one.
 
+### Object store (`internal/objstore`)
+
+The small slice of S3 the platform uses. It covers immutable blobs written create-only
+(`If-None-Match: *`), a manifest replaced only by compare-and-swap (`If-Match: <etag>`),
+SHA-256 checksums the server verifies, and presigned URLs, so pods move bundles without
+ever holding S3 credentials. An in-memory fake has the same semantics for unit tests. One
+contract test suite runs against both the fake and the real endpoint, which is how we know
+the fake is honest. Locally the endpoint is SeaweedFS (`charts/s3-local`); with 32
+concurrent writers, exactly one create-only write and one compare-and-swap win.
+
 ## Key decisions
 
 - **No git server.** A snapshot is a git bundle containing only the agent's changes

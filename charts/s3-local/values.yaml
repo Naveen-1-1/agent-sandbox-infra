@@ -1,0 +1,31 @@
+image:
+  repository: chrislusf/seaweedfs
+  tag: "4.48"
+  pullPolicy: IfNotPresent
+
+# Bucket created on startup.
+bucket: sbx
+
+credentials:
+  # Use an existing Secret with keys accessKey and secretKey instead of the
+  # generated one.
+  existingSecret: ""
+  accessKey: sbx-local
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClassName: "" # empty = cluster default
+
+service:
+  port: 8333
+
+metrics:
+  port: 9327
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
