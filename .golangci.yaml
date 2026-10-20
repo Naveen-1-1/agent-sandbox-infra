@@ -25,7 +25,7 @@ linters:
   exclusions:
     presets: [comments, std-error-handling]
     rules:
-      - path: (_test\.go|internal/testutil/)
+      - path: (_test\.go|internal/testutil/|internal/.*/[a-z]+test/)
         linters: [gosec, noctx]
     paths:
       - gen/
