@@ -1,0 +1,193 @@
+metadata:
+  labels:
+    sbx.dev/epoch: "3"
+    sbx.dev/workspace: demo
+spec:
+  automountServiceAccountToken: false
+  containers:
+  - command:
+    - /sbx/bin/sbx-agent
+    env:
+    - name: SBX_WORKSPACE_DIR
+      value: /workspace
+    - name: SBX_AGENT_TOKEN_SHA256
+      value: ab12
+    - name: SBX_AGENT_GRPC_ADDR
+      value: :9090
+    - name: SBX_AGENT_REST_ADDR
+      value: :8080
+    image: mcr.microsoft.com/devcontainers/base:bookworm
+    imagePullPolicy: IfNotPresent
+    name: workspace
+    ports:
+    - containerPort: 9090
+      name: agent-grpc
+    - containerPort: 8080
+      name: agent-rest
+    readinessProbe:
+      httpGet:
+        path: /v1/health
+        port: 8080
+      periodSeconds: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    volumeMounts:
+    - mountPath: /workspace
+      name: workspace
+    - mountPath: /sbx
+      name: sbx-tools
+      readOnly: true
+    workingDir: /workspace
+  enableServiceLinks: false
+  initContainers:
+  - args:
+    - install-tools
+    - /tools
+    image: localhost:5001/sbx-runtime:dev
+    imagePullPolicy: IfNotPresent
+    name: sbx-tools
+    resources:
+      limits:
+        memory: 1Gi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    volumeMounts:
+    - mountPath: /tools
+      name: sbx-tools
+  - args:
+    - restore
+    env:
+    - name: SBX_WORKSPACE
+      value: team/demo
+    - name: SBX_WORKSPACE_UID
+      value: 0b6e7c1a-uid
+    - name: SBX_EPOCH
+      value: "3"
+    - name: SBX_POD_UID
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.uid
+    - name: SBX_BROKER_ADDR
+      value: sbx-controller.sbx-system:9443
+    - name: SBX_TOKEN_DIR
+      value: /var/run/sbx/tokens
+    - name: SBX_WORKSPACE_DIR
+      value: /workspace
+    - name: SBX_SCRATCH_DIR
+      value: /sbx-scratch
+    image: localhost:5001/sbx-runtime:dev
+    imagePullPolicy: IfNotPresent
+    name: sbx-restore
+    resources:
+      limits:
+        memory: 1Gi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    volumeMounts:
+    - mountPath: /workspace
+      name: workspace
+    - mountPath: /sbx-scratch
+      name: sbx-scratch
+    - mountPath: /var/run/sbx/tokens
+      name: sbx-tokens
+      readOnly: true
+  - args:
+    - serve
+    env:
+    - name: SBX_WORKSPACE
+      value: team/demo
+    - name: SBX_WORKSPACE_UID
+      value: 0b6e7c1a-uid
+    - name: SBX_EPOCH
+      value: "3"
+    - name: SBX_POD_UID
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.uid
+    - name: SBX_BROKER_ADDR
+      value: sbx-controller.sbx-system:9443
+    - name: SBX_TOKEN_DIR
+      value: /var/run/sbx/tokens
+    - name: SBX_WORKSPACE_DIR
+      value: /workspace
+    - name: SBX_SCRATCH_DIR
+      value: /sbx-scratch
+    - name: SBX_SIDECAR_ADDR
+      value: :9091
+    - name: SBX_SNAPSHOT_EXCLUDE
+      value: node_modules,.venv
+    - name: SBX_SNAPSHOT_MAX_FILE_BYTES
+      value: "52428800"
+    - name: SBX_SNAPSHOT_MAX_NEW_BYTES
+      value: "524288000"
+    - name: SBX_SNAPSHOT_MAX_BUNDLE_BYTES
+      value: "524288000"
+    image: localhost:5001/sbx-runtime:dev
+    imagePullPolicy: IfNotPresent
+    name: sbx-sidecar
+    ports:
+    - containerPort: 9091
+      name: sidecar
+    readinessProbe:
+      grpc:
+        port: 9091
+        service: null
+      periodSeconds: 2
+    resources:
+      limits:
+        memory: 1Gi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    volumeMounts:
+    - mountPath: /workspace
+      name: workspace
+    - mountPath: /sbx-scratch
+      name: sbx-scratch
+    - mountPath: /var/run/sbx/tokens
+      name: sbx-tokens
+      readOnly: true
+  securityContext:
+    fsGroup: 1000
+    runAsGroup: 1000
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  terminationGracePeriodSeconds: 10
+  volumes:
+  - name: workspace
+    persistentVolumeClaim:
+      claimName: ws-demo-e3
+  - emptyDir: {}
+    name: sbx-tools
+  - emptyDir: {}
+    name: sbx-scratch
+  - name: sbx-tokens
+    secret:
+      defaultMode: 288
+      items:
+      - key: broker-token
+        path: broker-token
+      - key: sidecar-token
+        path: sidecar-token
+      secretName: ws-demo-e3-tokens
