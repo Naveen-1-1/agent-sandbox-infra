@@ -86,8 +86,9 @@ func TestSourceIsImmutable(t *testing.T) {
 	wantInvalid(t, k8s.Update(ctx(t), ws), "source is immutable")
 }
 
-func TestRepoURLMustBeHTTP(t *testing.T) {
-	for _, url := range []string{"git@github.com:org/repo.git", "ssh://github.com/org/repo", "file:///etc/passwd", ""} {
+func TestRepoURLMustBeHTTPWithoutCredentials(t *testing.T) {
+	for _, url := range []string{"git@github.com:org/repo.git", "ssh://github.com/org/repo", "file:///etc/passwd", "",
+		"https://user:token@github.com/org/repo.git"} {
 		ws := newWorkspace()
 		ws.Spec.Source.RepoURL = url
 		err := k8s.Create(ctx(t), ws)

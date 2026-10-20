@@ -72,8 +72,9 @@ type WorkspaceSpec struct {
 
 // Source is a git repository and the revision to start from.
 type Source struct {
-	// RepoURL is the repository to clone, over https or http.
-	// +kubebuilder:validation:Pattern=`^https?://[^\s]+$`
+	// RepoURL is the repository to clone, over https or http. Credentials
+	// must not be embedded in it.
+	// +kubebuilder:validation:Pattern=`^https?://[^\s/@]+(/[^\s]*)?$`
 	// +kubebuilder:validation:MaxLength=2048
 	RepoURL string `json:"repoURL"`
 

@@ -119,10 +119,11 @@ spec:
                     maxLength: 255
                     type: string
                   repoURL:
-                    description: RepoURL is the repository to clone, over https or
-                      http.
+                    description: |-
+                      RepoURL is the repository to clone, over https or http. Credentials
+                      must not be embedded in it.
                     maxLength: 2048
-                    pattern: ^https?://[^\s]+$
+                    pattern: ^https?://[^\s/@]+(/[^\s]*)?$
                     type: string
                 required:
                 - repoURL
