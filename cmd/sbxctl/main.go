@@ -12,6 +12,7 @@
 //	sbxctl wait NS/NAME PHASE [--timeout 3m]
 //	sbxctl demo [--image IMG] [--thinking 10s] [--after-turn 5s] [--keep]   (admin token)
 //	sbxctl policy get | set NAME [--param k=v ...] | reset                    (admin token)
+//	sbxctl ui                          print a link to the web UI, signed in with the token
 //
 // The gateway URL and token come from --gateway/--token or SBX_GATEWAY and
 // SBX_TOKEN (the admin token, or a workspace's own token).
@@ -168,6 +169,12 @@ func run(args []string) error {
 
 	case "policy":
 		return clusterPolicy(ctx, c, rest, *asJSON)
+
+	case "ui":
+		// The token rides in the fragment, which browsers never send; the
+		// page moves it to session storage and drops it from the address.
+		fmt.Printf("%s/ui/#token=%s\n", strings.TrimSuffix(*gw, "/"), *tok)
+		return nil
 
 	case "editor":
 		fs := flag.NewFlagSet("editor", flag.ContinueOnError)

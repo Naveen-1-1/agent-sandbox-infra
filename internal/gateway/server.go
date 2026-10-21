@@ -215,6 +215,8 @@ type handler func(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspace)
 func (s *Server) APIHandler() http.Handler {
 	mux := http.NewServeMux()
 	const ws = "/api/v1/workspaces/{ns}/{name}"
+	mux.Handle("GET /ui/", uiHandler(webui))
+	mux.Handle("GET /{$}", http.RedirectHandler("/ui/", http.StatusFound))
 	mux.HandleFunc("GET /api/v1/policy", s.admin(s.getPolicy))
 	mux.HandleFunc("PUT /api/v1/policy", s.admin(s.putPolicy))
 	mux.HandleFunc("DELETE /api/v1/policy", s.admin(s.resetPolicy))
