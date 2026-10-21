@@ -140,6 +140,38 @@ func TestRoundTripRestoresWorkspace(t *testing.T) {
 	}
 }
 
+// TestRefsAtTheBaseSurvive covers an agent that hasn't committed yet: every
+// branch and tag still points at the base (or older), so none of them is
+// in the bundle, and they must come back all the same.
+func TestRefsAtTheBaseSurvive(t *testing.T) {
+	origin := gf.NewRepo(t, map[string]string{"a.txt": "a1\n", "b.txt": "b1\n"})
+	first := gf.Git(t, origin, "rev-parse", "HEAD")
+	gf.Write(t, filepath.Join(origin, "a.txt"), "a2\n")
+	gf.Git(t, origin, "commit", "-q", "-am", "second")
+	base := gf.Git(t, origin, "rev-parse", "HEAD")
+
+	ws := filepath.Join(t.TempDir(), "ws")
+	gf.Git(t, filepath.Dir(ws), "clone", "-q", "file://"+origin, ws)
+	gf.Git(t, ws, "tag", "at-base")
+	gf.Git(t, ws, "branch", "older", first)
+	gf.Git(t, ws, "checkout", "-q", "-b", "agent/feature")
+	gf.Write(t, filepath.Join(ws, "new.txt"), "staged\n")
+	gf.Git(t, ws, "add", "new.txt")
+	gf.Write(t, filepath.Join(ws, "b.txt"), "b2 unstaged\n")
+	want := gf.State(t, ws)
+
+	res := snapshotOf(t, ws, base)
+	dst := filepath.Join(t.TempDir(), "restored")
+	if err := snapshot.Restore(context.Background(), dst, snapshot.RestoreOptions{
+		OriginURL: "file://" + origin, Base: base, Snapshot: res.BundlePath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(want, gf.State(t, dst)); diff != "" {
+		t.Errorf("restored workspace differs (-want +got):\n%s", diff)
+	}
+}
+
 func TestSnapshotLeavesUserRepositoryUntouched(t *testing.T) {
 	_, ws, base := workspace(t)
 	before := dirDigest(t, filepath.Join(ws, ".git"))

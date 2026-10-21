@@ -106,6 +106,9 @@ func applySnapshot(ctx context.Context, g git, bundle string) error {
 	if err != nil {
 		return err
 	}
+	if err := restoreRefs(ctx, g, msg); err != nil {
+		return err
+	}
 
 	if head == "detached" {
 		parent, err := g.run(ctx, "rev-parse", "-q", "--verify", wipRef+"^1")
@@ -134,6 +137,48 @@ func applySnapshot(ctx context.Context, g git, bundle string) error {
 	// 1 only means some files differ from the index, which is expected.
 	_, _ = g.run(ctx, "update-index", "-q", "--refresh")
 	_, err = g.run(ctx, "update-ref", "-d", wipRef)
+	return err
+}
+
+// restoreRefs recreates every branch and tag the snapshot recorded,
+// including those the bundle left out because they point into the base's
+// history. A ref whose object isn't here (an upstream tag, or history a
+// shallow base doesn't have) is skipped: it can be fetched from origin again.
+func restoreRefs(ctx context.Context, g git, msg string) error {
+	var refs []ref
+	var objects strings.Builder
+	for _, line := range strings.Split(msg, "\n") {
+		v, ok := strings.CutPrefix(line, trailerRef)
+		if !ok {
+			continue
+		}
+		sha, name, ok := strings.Cut(strings.TrimSpace(v), " ")
+		if !ok {
+			return fmt.Errorf("snapshot: malformed %q trailer %q", strings.TrimSpace(trailerRef), line)
+		}
+		refs = append(refs, ref{sha: sha, name: name})
+		objects.WriteString(sha + "\n")
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	out, err := g.runInput(ctx, []byte(objects.String()), "cat-file", "--batch-check=%(objectname)")
+	if err != nil {
+		return err
+	}
+	present := map[string]bool{}
+	for _, l := range strings.Split(out, "\n") {
+		if f := strings.Fields(l); len(f) == 1 {
+			present[f[0]] = true // missing objects print "<sha> missing"
+		}
+	}
+	var stdin strings.Builder
+	for _, r := range refs {
+		if present[r.sha] {
+			fmt.Fprintf(&stdin, "update %s %s\n", r.name, r.sha)
+		}
+	}
+	_, err = g.runInput(ctx, []byte(stdin.String()), "update-ref", "--stdin")
 	return err
 }
 

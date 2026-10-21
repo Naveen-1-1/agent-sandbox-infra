@@ -18,8 +18,12 @@ import (
 const (
 	trailerHead  = "sbx-head: "  // symbolic HEAD ref, or "detached"
 	trailerIndex = "sbx-index: " // "staged", or "head" when the index had conflicts
-	wipRef       = "refs/sbx/wip"
-	baseRef      = "refs/sbx/base"
+	// One per local branch and tag: "<object> <ref>". The bundle leaves out
+	// refs that point into the base's history (a branch made without new
+	// commits, main itself), so the snapshot commit records them all.
+	trailerRef = "sbx-ref: "
+	wipRef     = "refs/sbx/wip"
+	baseRef    = "refs/sbx/base"
 )
 
 // MetaDir is the workspace directory where sbx keeps its own state. It is
@@ -108,12 +112,20 @@ func Create(ctx context.Context, repo string, opts Options) (*Result, error) {
 		return nil, err
 	}
 
+	refs, err := listRefs(ctx, user.with("GIT_DIR="+gitDir))
+	if err != nil {
+		return nil, err
+	}
 	commit := plumb.with(commitEnv(opts.Time)...)
 	headTrailer := res.Head
 	if headTrailer == "" {
 		headTrailer = "detached"
 	}
-	msg := fmt.Sprintf("sbx snapshot\n\n%s%s\n%s%s\n", trailerHead, headTrailer, trailerIndex, indexMode)
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "sbx snapshot\n\n%s%s\n%s%s\n", trailerHead, headTrailer, trailerIndex, indexMode)
+	for _, r := range refs {
+		fmt.Fprintf(&msg, "%s%s %s\n", trailerRef, r.sha, r.name)
+	}
 
 	parents := []string{}
 	if res.HeadCommit != "" {
@@ -123,13 +135,13 @@ func Create(ctx context.Context, repo string, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res.WIP, err = commit.run(ctx, append(append([]string{"commit-tree", wipTree}, parents...), "-p", res.Index, "-m", msg)...)
+	res.WIP, err = commit.run(ctx, append(append([]string{"commit-tree", wipTree}, parents...), "-p", res.Index, "-m", msg.String())...)
 	if err != nil {
 		return nil, err
 	}
 
 	sg := git{dir: shadow, env: []string{"GIT_DIR=" + shadow}}
-	if res.Refs, err = copyRefs(ctx, user.with("GIT_DIR="+gitDir), sg, res.WIP); err != nil {
+	if res.Refs, err = copyRefs(ctx, sg, refs, res.WIP); err != nil {
 		return nil, err
 	}
 
@@ -309,29 +321,38 @@ func pathspecs(patterns []string) []string {
 	return out
 }
 
-// copyRefs mirrors the user's local branches and tags into the shadow and
-// points refs/sbx/wip at the snapshot commit.
-func copyRefs(ctx context.Context, user, shadow git, wip string) ([]string, error) {
+type ref struct{ sha, name string }
+
+// listRefs reads the user's local branches and tags, sorted by name.
+func listRefs(ctx context.Context, user git) ([]ref, error) {
 	out, err := user.run(ctx, "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads", "refs/tags")
 	if err != nil {
 		return nil, err
 	}
-	var stdin strings.Builder
-	refs := []string{}
+	var refs []ref
 	for _, line := range strings.Split(out, "\n") {
-		if line == "" {
-			continue
+		if sha, name, ok := strings.Cut(line, " "); ok {
+			refs = append(refs, ref{sha: sha, name: name})
 		}
-		sha, ref, _ := strings.Cut(line, " ")
-		fmt.Fprintf(&stdin, "update %s %s\n", ref, sha)
-		refs = append(refs, ref)
+	}
+	return refs, nil
+}
+
+// copyRefs mirrors the user's refs into the shadow and points refs/sbx/wip
+// at the snapshot commit.
+func copyRefs(ctx context.Context, shadow git, refs []ref, wip string) ([]string, error) {
+	var stdin strings.Builder
+	names := []string{}
+	for _, r := range refs {
+		fmt.Fprintf(&stdin, "update %s %s\n", r.name, r.sha)
+		names = append(names, r.name)
 	}
 	fmt.Fprintf(&stdin, "update %s %s\n", wipRef, wip)
-	refs = append(refs, wipRef)
+	names = append(names, wipRef)
 	if _, err := shadow.runInput(ctx, []byte(stdin.String()), "update-ref", "--stdin"); err != nil {
 		return nil, err
 	}
-	return refs, nil
+	return names, nil
 }
 
 // copyIndex copies the index file; a missing index means an empty one.
