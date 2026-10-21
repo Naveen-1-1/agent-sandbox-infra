@@ -145,6 +145,10 @@ func (d *run) play(ctx context.Context) error {
 		return err
 	}
 	d.say("   dependencies: %s", depsSummary(d.ws))
+	if link, err := d.c.EditorURL(ctx, d.ns, d.name, 0); err == nil {
+		d.say("   editor: %s", link)
+		d.say("   (the link works for a few minutes; run with --keep to look around afterwards)")
+	}
 
 	d.header("Agent turn: write a plan, make a branch, stage one change, leave another unstaged")
 	if err := d.c.WriteFile(ctx, d.ns, d.name, planFile, []byte(planContent)); err != nil {
