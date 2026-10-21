@@ -15,6 +15,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Purpose scopes a token to one kind of caller and callee.
@@ -32,6 +33,10 @@ const (
 	// workspace through the gateway. It is derived with epoch 0, so it stays
 	// valid across wakes.
 	Gateway Purpose = "gateway"
+	// Ticket is a short-lived login link to a workspace's editor or app host.
+	Ticket Purpose = "ticket"
+	// Session is a browser's cookie for one workspace host.
+	Session Purpose = "session"
 )
 
 // MinKeyBytes is the shortest accepted master key.
@@ -39,6 +44,9 @@ const MinKeyBytes = 32
 
 // ErrInvalid means a presented token did not match.
 var ErrInvalid = errors.New("token: invalid")
+
+// ErrExpired means a signed token is past its expiry.
+var ErrExpired = errors.New("token: expired")
 
 // Keyring derives tokens from a master key.
 type Keyring struct{ key []byte }
@@ -61,6 +69,32 @@ func (k Keyring) Derive(p Purpose, workspaceUID string, epoch int64) string {
 // Verify checks presented in constant time.
 func (k Keyring) Verify(presented string, p Purpose, workspaceUID string, epoch int64) error {
 	return Equal(presented, k.Derive(p, workspaceUID, epoch))
+}
+
+// Sign returns a token for purpose that is only good for one workspace, on
+// one host (a browser origin, without the port: cookies ignore ports), until
+// expires: "<unix expiry>.<mac>".
+func (k Keyring) Sign(p Purpose, workspaceUID, host string, expires time.Time) string {
+	exp := strconv.FormatInt(expires.Unix(), 10)
+	mac := hmac.New(sha256.New, k.key)
+	mac.Write([]byte(strings.Join([]string{"sbx-v1", string(p), workspaceUID, host, exp}, "|")))
+	return exp + "." + hex.EncodeToString(mac.Sum(nil))
+}
+
+// Check verifies a token from Sign and that it hasn't expired at now.
+func (k Keyring) Check(presented string, p Purpose, workspaceUID, host string, now time.Time) error {
+	exp, _, ok := strings.Cut(presented, ".")
+	n, err := strconv.ParseInt(exp, 10, 64)
+	if !ok || err != nil {
+		return ErrInvalid
+	}
+	if err := Equal(presented, k.Sign(p, workspaceUID, host, time.Unix(n, 0))); err != nil {
+		return err
+	}
+	if now.Unix() > n {
+		return ErrExpired
+	}
+	return nil
 }
 
 // Equal compares two tokens in constant time.

@@ -12,3 +12,7 @@ gateway:
   service:
     type: NodePort
     nodePort: 30080 # mapped to 127.0.0.1:8080 by deploy/kind/cluster.yaml
+  # Browsers resolve every *.localhost name to loopback, so editors need no
+  # DNS setup: http://<name>.<namespace>.sbx.localhost:8080/
+  domain: sbx.localhost
+  publicPort: 8080

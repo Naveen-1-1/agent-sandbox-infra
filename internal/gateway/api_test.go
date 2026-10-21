@@ -124,7 +124,7 @@ func start(t *testing.T, cfg gateway.Config, delay time.Duration) *env {
 	reg := prometheus.NewRegistry()
 	srv := gateway.New(cfg, k8s, k8s, k8s, reg, nil)
 	srv.SetSynced()
-	hs := httptest.NewServer(srv.APIHandler())
+	hs := httptest.NewServer(srv.Handler())
 	e := &env{srv: srv, http: hs, reg: reg, ns: ns, wakes: map[string]int{}, delay: delay,
 		admin: &sbxapi.Client{BaseURL: hs.URL, Token: adminToken}}
 

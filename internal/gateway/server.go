@@ -60,6 +60,15 @@ type Config struct {
 	HintBurst      int
 
 	AgentGRPCPort, AgentRESTPort int
+
+	// Domain serves editors and app ports on workspace hosts under it (see
+	// web.go); empty turns that off. PublicScheme and PublicPort are how
+	// browsers reach the gateway, for login links.
+	Domain       string
+	PublicScheme string // default http
+	PublicPort   int    // 0: the scheme's default
+	// SessionTTL is how long a browser stays signed in to a workspace host.
+	SessionTTL time.Duration
 	// AgentToken returns the token for a workspace's current pod. Default:
 	// derived for the workspace's epoch.
 	AgentToken func(ws *sbxv1.Workspace) string
@@ -93,6 +102,12 @@ func (c *Config) defaults() {
 	if c.AgentRESTPort == 0 {
 		c.AgentRESTPort = podspec.AgentRESTPort
 	}
+	if c.PublicScheme == "" {
+		c.PublicScheme = "http"
+	}
+	if c.SessionTTL <= 0 {
+		c.SessionTTL = 12 * time.Hour
+	}
 	if c.AgentToken == nil {
 		keys := c.Keys
 		c.AgentToken = func(ws *sbxv1.Workspace) string { return keys.Derive(token.Agent, string(ws.UID), ws.Status.Epoch) }
@@ -110,8 +125,10 @@ type Server struct {
 	metrics *metrics.Gateway
 	hints   *rate.Limiter
 	podHTTP *http.Client
-	log     *slog.Logger
-	synced  atomic.Bool
+	// webTransport carries editor and app traffic, WebSockets included.
+	webTransport *http.Transport
+	log          *slog.Logger
+	synced       atomic.Bool
 
 	mu     sync.Mutex
 	hintAt map[string]time.Time
@@ -127,12 +144,13 @@ func New(cfg Config, cache client.Reader, c client.Client, api client.Reader, re
 	h := &Holder{PerWorkspace: cfg.HoldPerWorkspace, Global: cfg.HoldGlobal, Timeout: cfg.HoldTimeout}
 	s := &Server{
 		cfg: cfg, cache: cache, client: c, holder: h,
-		waker:   &Waker{Client: c, API: api},
-		signals: NewSignals(h),
-		hints:   rate.NewLimiter(rate.Limit(cfg.HintsPerSecond), cfg.HintBurst),
-		podHTTP: &http.Client{Timeout: cfg.ExecTimeout},
-		log:     log,
-		hintAt:  map[string]time.Time{},
+		waker:        &Waker{Client: c, API: api},
+		signals:      NewSignals(h),
+		hints:        rate.NewLimiter(rate.Limit(cfg.HintsPerSecond), cfg.HintBurst),
+		podHTTP:      &http.Client{Timeout: cfg.ExecTimeout},
+		webTransport: &http.Transport{MaxIdleConnsPerHost: 16, IdleConnTimeout: time.Minute},
+		log:          log,
+		hintAt:       map[string]time.Time{},
 	}
 	s.metrics = metrics.NewGateway(reg, h.Total)
 	h.Observe = s.metrics.ObserveHold
@@ -140,7 +158,10 @@ func New(cfg Config, cache client.Reader, c client.Client, api client.Reader, re
 }
 
 // Close releases idle connections to workspace pods.
-func (s *Server) Close() { s.podHTTP.CloseIdleConnections() }
+func (s *Server) Close() {
+	s.podHTTP.CloseIdleConnections()
+	s.webTransport.CloseIdleConnections()
+}
 
 // Signals is this replica's traffic view, served over gRPC to the controller.
 func (s *Server) Signals() *Signals { return s.signals }
@@ -192,6 +213,7 @@ func (s *Server) APIHandler() http.Handler {
 	mux.HandleFunc("POST "+ws+"/turn-ended", s.member(s.turnEnded))
 	mux.HandleFunc("POST "+ws+"/suspend", s.member(s.suspend))
 	mux.HandleFunc(ws+"/files/{path...}", s.member(s.files))
+	mux.HandleFunc("POST "+ws+"/editor", s.member(s.editorLink))
 	mux.HandleFunc("GET "+ws+"/services", s.member(s.listServices))
 	mux.HandleFunc("PUT "+ws+"/services/{svc}", s.member(s.putService))
 	mux.HandleFunc("DELETE "+ws+"/services/{svc}", s.member(s.deleteService))
@@ -311,6 +333,10 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.code = code
 	r.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap lets http.ResponseController reach the connection, which a
+// proxied WebSocket upgrade hijacks.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (s *Server) instrument(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -690,6 +716,24 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspa
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// editorLink returns a login link to ws's editor, or to one of its app
+// ports. It doesn't wake the workspace; opening the link does.
+func (s *Server) editorLink(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspace) {
+	var req sbxapi.EditorRequest
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req); err != nil || req.Port < 0 || req.Port > 65535 {
+			writeErr(w, http.StatusBadRequest, sbxapi.CodeInvalid, "port must be 1-65535, or 0 for the editor")
+			return
+		}
+	}
+	link, err := s.LoginURL(ws, req.Port)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, sbxapi.CodeNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sbxapi.EditorResponse{URL: link})
 }
 
 func (s *Server) listServices(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspace) {

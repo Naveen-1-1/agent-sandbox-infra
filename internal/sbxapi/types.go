@@ -14,6 +14,7 @@
 //	POST   /workspaces/{ns}/{name}/wake-hint        a user message arrived; start waking, don't wait
 //	POST   /workspaces/{ns}/{name}/turn-ended       the agent finished its turn
 //	POST   /workspaces/{ns}/{name}/suspend          suspend now
+//	POST   /workspaces/{ns}/{name}/editor           a sign-in link to the editor or an app port
 //	GET    /workspaces/{ns}/{name}/services         declared services and, if awake, their state
 //	PUT|DELETE /workspaces/{ns}/{name}/services/{svc} declare or remove a service
 //
@@ -55,6 +56,18 @@ type Deps struct {
 	Pending bool   `json:"pending"`
 	Ready   bool   `json:"ready"`
 	Message string `json:"message,omitempty"`
+}
+
+// EditorRequest asks for a sign-in link: to the editor, or to an app port
+// inside the workspace.
+type EditorRequest struct {
+	Port int `json:"port,omitempty"`
+}
+
+// EditorResponse is a sign-in link, good for a few minutes. Opening it
+// wakes the workspace if it sleeps.
+type EditorResponse struct {
+	URL string `json:"url"`
 }
 
 // Service is a declared long-running process and, when the workspace is

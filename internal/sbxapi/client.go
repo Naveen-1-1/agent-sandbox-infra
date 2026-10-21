@@ -128,6 +128,12 @@ func (c *Client) Suspend(ctx context.Context, ns, name string) error {
 	return c.do(ctx, http.MethodPost, path(ns, name, "suspend"), nil, nil)
 }
 
+// EditorURL returns a sign-in link to the editor (port 0) or an app port.
+func (c *Client) EditorURL(ctx context.Context, ns, name string, port int) (string, error) {
+	out := &EditorResponse{}
+	return out.URL, c.do(ctx, http.MethodPost, path(ns, name, "editor"), EditorRequest{Port: port}, out)
+}
+
 // Services lists the declared services and, if the workspace is awake,
 // their state. It never wakes the workspace.
 func (c *Client) Services(ctx context.Context, ns, name string) ([]Service, error) {

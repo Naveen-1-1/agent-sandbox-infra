@@ -6,6 +6,7 @@
 //	sbxctl get NS/NAME
 //	sbxctl exec [--wait-for deps|none] NS/NAME -- COMMAND [ARGS...]
 //	sbxctl service list|start|stop NS/NAME [SVC -- COMMAND ...]
+//	sbxctl editor [--port N] NS/NAME   print a sign-in link (opening it wakes the workspace)
 //	sbxctl cat NS/NAME PATH            sbxctl put NS/NAME PATH < file
 //	sbxctl wake | wake-hint | turn-ended | suspend | delete | token NS/NAME
 //	sbxctl wait NS/NAME PHASE [--timeout 3m]
@@ -171,6 +172,23 @@ func run(args []string) error {
 
 	case "service":
 		return service(ctx, c, rest, *asJSON)
+
+	case "editor":
+		fs := flag.NewFlagSet("editor", flag.ContinueOnError)
+		port := fs.Int("port", 0, "an app port inside the workspace instead of the editor")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		ns, name, err := target(fs.Args())
+		if err != nil {
+			return err
+		}
+		link, err := c.EditorURL(ctx, ns, name, *port)
+		if err != nil {
+			return err
+		}
+		fmt.Println(link)
+		return nil
 
 	case "demo":
 		fs := flag.NewFlagSet("demo", flag.ContinueOnError)

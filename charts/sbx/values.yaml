@@ -56,6 +56,15 @@ gateway:
     global: 4096
     timeout: 90s
   execTimeout: 10m
+  # Editors and app ports are served on per-workspace hosts under this
+  # domain: <name>.<namespace>.<domain> and <port>.<name>.<namespace>.<domain>.
+  # It needs a wildcard DNS record (and, for https, a wildcard certificate)
+  # pointing at the gateway. Empty turns editors off.
+  domain: ""
+  # How browsers reach the gateway, for sign-in links.
+  publicScheme: http
+  publicPort: 0 # 0: the scheme's default
+  sessionTTL: 12h
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 512Mi}

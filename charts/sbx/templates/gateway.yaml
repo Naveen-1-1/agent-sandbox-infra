@@ -87,6 +87,10 @@ spec:
             - {name: SBX_HOLD_TIMEOUT, value: {{ .Values.gateway.hold.timeout | quote }}}
             - {name: SBX_EXEC_TIMEOUT, value: {{ .Values.gateway.execTimeout | quote }}}
             - {name: SBX_DEPS_TIMEOUT, value: {{ .Values.workspace.deps.waitTimeout | quote }}}
+            - {name: SBX_DOMAIN, value: {{ .Values.gateway.domain | quote }}}
+            - {name: SBX_PUBLIC_SCHEME, value: {{ .Values.gateway.publicScheme | quote }}}
+            - {name: SBX_PUBLIC_PORT, value: {{ .Values.gateway.publicPort | quote }}}
+            - {name: SBX_SESSION_TTL, value: {{ .Values.gateway.sessionTTL | quote }}}
           ports:
             - {name: http, containerPort: 8080}
             - {name: admin, containerPort: 8081}

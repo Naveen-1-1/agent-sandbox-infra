@@ -3,7 +3,9 @@ package token_test
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/testutil/leaktest"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/token"
@@ -63,5 +65,28 @@ func TestFromHeader(t *testing.T) {
 		if got != want || ok != (want != "") {
 			t.Errorf("FromHeader(%q) = %q, %v; want %q", in, got, ok, want)
 		}
+	}
+}
+
+func TestSignedTokensAreScopedAndExpire(t *testing.T) {
+	k := keyring(t, 1)
+	now := time.Unix(1_800_000_000, 0)
+	tok := k.Sign(token.Session, "uid-a", "demo.team.sbx.localhost", now.Add(time.Hour))
+	if err := k.Check(tok, token.Session, "uid-a", "demo.team.sbx.localhost", now); err != nil {
+		t.Fatalf("own token: %v", err)
+	}
+	for name, err := range map[string]error{
+		"another purpose":   k.Check(tok, token.Ticket, "uid-a", "demo.team.sbx.localhost", now),
+		"another workspace": k.Check(tok, token.Session, "uid-b", "demo.team.sbx.localhost", now),
+		"another host":      k.Check(tok, token.Session, "uid-a", "3000.demo.team.sbx.localhost", now),
+		"tampered expiry":   k.Check("9999999999"+tok[strings.Index(tok, "."):], token.Session, "uid-a", "demo.team.sbx.localhost", now),
+		"garbage":           k.Check("not-a-token", token.Session, "uid-a", "demo.team.sbx.localhost", now),
+	} {
+		if !errors.Is(err, token.ErrInvalid) {
+			t.Errorf("%s: %v, want ErrInvalid", name, err)
+		}
+	}
+	if err := k.Check(tok, token.Session, "uid-a", "demo.team.sbx.localhost", now.Add(2*time.Hour)); !errors.Is(err, token.ErrExpired) {
+		t.Errorf("after expiry: %v, want ErrExpired", err)
 	}
 }

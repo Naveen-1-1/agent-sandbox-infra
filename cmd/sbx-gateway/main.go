@@ -1,6 +1,7 @@
 // Command sbx-gateway fronts every workspace: it authenticates requests,
 // holds those for a sleeping workspace while it wakes, and forwards them to
-// the workspace's pod.
+// the workspace's pod. It serves the REST API, and each workspace's editor
+// and app ports on hosts of their own.
 package main
 
 import (
@@ -50,6 +51,10 @@ func main() {
 	flag.DurationVar(&cfg.HoldTimeout, "hold-timeout", envDuration("SBX_HOLD_TIMEOUT", 90*time.Second), "how long a request may wait for a wake")
 	flag.DurationVar(&cfg.ExecTimeout, "exec-timeout", envDuration("SBX_EXEC_TIMEOUT", 10*time.Minute), "default command timeout")
 	flag.DurationVar(&cfg.DepsTimeout, "deps-timeout", envDuration("SBX_DEPS_TIMEOUT", 15*time.Minute), "how long a command may wait for dependencies")
+	flag.StringVar(&cfg.Domain, "domain", os.Getenv("SBX_DOMAIN"), "serve editors and app ports on <name>.<namespace>.<domain> (empty: off)")
+	flag.StringVar(&cfg.PublicScheme, "public-scheme", envOr("SBX_PUBLIC_SCHEME", "http"), "scheme browsers use to reach the gateway")
+	flag.IntVar(&cfg.PublicPort, "public-port", envInt("SBX_PUBLIC_PORT", 0), "port browsers use to reach the gateway (0: the scheme's default)")
+	flag.DurationVar(&cfg.SessionTTL, "session-ttl", envDuration("SBX_SESSION_TTL", 12*time.Hour), "how long a browser stays signed in to a workspace")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("component", "sbx-gateway")
@@ -124,7 +129,7 @@ func run(ctx context.Context, cfg gateway.Config, addr, adminAddr, signalsAddr, 
 		}
 	}()
 
-	api := &http.Server{Addr: addr, Handler: srv.APIHandler(), ReadHeaderTimeout: 10 * time.Second}
+	api := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	adminSrv := &http.Server{Addr: adminAddr, Handler: srv.AdminHandler(reg), ReadHeaderTimeout: 5 * time.Second}
 	for _, s := range []*http.Server{api, adminSrv} {
 		go func() {
