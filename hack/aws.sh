@@ -24,7 +24,7 @@ mkdir -p bin notes
 tf() { terraform -chdir="$tfdir" "$@"; }
 out() { tf output -raw "$1"; }
 say() { printf '\n== %s\n' "$*"; }
-saved_run() { sed -n 's/^run *= *"\(.*\)"/\1/p' "$tfvars" 2>/dev/null; }
+saved_run() { if [[ -f "$tfvars" ]]; then sed -n 's/^run *= *"\(.*\)"/\1/p' "$tfvars"; fi; }
 approve() {
   if [[ "${APPROVED:-}" != yes ]]; then
     echo "Not running $1 without APPROVED=yes. Read the plan above first." >&2
