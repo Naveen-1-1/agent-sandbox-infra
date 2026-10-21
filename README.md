@@ -46,7 +46,8 @@ thinking time and keeps the workspace afterwards.
 - the gateway, on `http://127.0.0.1:8080` through kind's port mapping,
 - upstream agent-sandbox,
 - a single-pod SeaweedFS for S3,
-- a small git server with test repositories.
+- a small git server with test repositories,
+- Prometheus and Grafana with the sbx dashboards.
 
 Every endpoint, credential, storage class and image registry is a Helm value in
 `charts/sbx/values.yaml`. `deploy/values/kind.yaml` holds the local overrides.
@@ -120,6 +121,21 @@ params: {idleTimeout: 5m}'
 The chart's defaults are under `policy:` in `charts/sbx/values.yaml`. A broken
 `sbx-policy` is reported as an Event on the ConfigMap and ignored.
 
+### Metrics and dashboards
+
+On kind, `make deploy` also installs Prometheus and Grafana:
+
+```bash
+make grafana   # http://127.0.0.1:3000/dashboards?tag=sbx: fleet, wake, storage and cost
+```
+
+The dashboards show workspaces by state, wake latency (files, serving, dependencies),
+held requests, snapshot and dependency sizes, the dependency cache hit rate, and what the
+fleet costs per hour at the list prices under `pricing:` in `charts/sbx/values.yaml`. Set
+`monitoring.enabled: false` to use the cluster's own Prometheus operator and Grafana. Then
+`metrics.serviceMonitors` and `metrics.dashboards` install just the ServiceMonitors and
+dashboards.
+
 ## Development
 
 | Command | What it does |
@@ -129,6 +145,7 @@ The chart's defaults are under `policy:` in `charts/sbx/values.yaml`. A broken
 | `make lint` | golangci-lint (tools are pinned in `tools.mod`) |
 | `make test-e2e` | End-to-end tests against the deployed cluster (`RUN=<regex>`) |
 | `make demo` | Play an agent session against the deployed cluster |
+| `make grafana` | Open Grafana with the sbx dashboards |
 | `make gen` / `make verify-gen` | Regenerate CRDs and gRPC code / check they're current |
 | `make kind-up` / `make kind-down` | Create / delete the local cluster |
 | `make deploy` / `make undeploy` | Install / remove the platform |

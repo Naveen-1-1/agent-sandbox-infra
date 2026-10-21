@@ -351,16 +351,39 @@ One umbrella chart installs:
 - the controller;
 - the gateway (two replicas);
 - upstream agent-sandbox (vendored and unmodified; can be disabled);
-- optionally, SeaweedFS and a test-only git fixtures server.
+- optionally, SeaweedFS and a test-only git fixtures server;
+- optionally, kube-prometheus-stack, trimmed to Prometheus, Grafana and the operator.
 
 The token master key is generated once and kept across upgrades. Images are built from
 binaries cross-compiled on the host and tagged with a content hash, so an upgrade only
 rolls what changed. There are four images:
 
-- `sbx-runtime` (sidecar, agent, git) for workspace pods;
+- `sbx-runtime` (sidecar, agent, git, code-server and the activity extension) for
+  workspace pods;
 - `sbx-controller`;
 - `sbx-gateway` (distroless);
 - `sbx-fixtures` (git over plain HTTP) for tests and the demo.
+
+### Observability (`internal/metrics`, `internal/cost`, `charts/sbx/dashboards`)
+
+The controller and every gateway replica export `sbx_*` metrics. ServiceMonitors put them
+in Prometheus, and three Grafana dashboards ship with the chart:
+
+- **Fleet:** workspaces awake and asleep, time spent in each phase, wakes and suspends,
+  sleep-policy verdicts, and operations queued for a slot.
+- **Wake:** latency from the wake request to files restored, serving and dependencies
+  ready, by trigger; how far ahead a hint started the wake; requests held and rejected;
+  the dependency cache hit rate.
+- **Storage and cost:** what object storage holds by kind (snapshots, bases, dependency
+  archives), the sizes pushed on suspend and fetched on wake, and the cost.
+
+Cost is computed at scrape time from a table of list prices in the chart values. An awake
+workspace pays for its pod's CPU and memory requests and its disk; a sleeping one only for
+its snapshot in object storage. `sbx_cost_saved_usd_per_hour` is what the sleeping
+workspaces would cost awake, less what they cost asleep. The leader also lists object
+storage now and then to size it. Every phase is exported, zeros included, so a quiet fleet
+reads 0 rather than "no data". A unit test fails if a dashboard queries a metric nothing
+exports, and an e2e test runs every dashboard query against the live Prometheus.
 
 ### Demo (`internal/demo`, `sbxctl demo`, `make demo`)
 
