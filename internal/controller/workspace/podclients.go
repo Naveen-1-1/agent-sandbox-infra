@@ -41,7 +41,7 @@ func (g GRPCPods) Agent(ws *sbxv1.Workspace, pod Pod) Agent {
 }
 
 func (g GRPCPods) Sidecar(ws *sbxv1.Workspace, pod Pod) Sidecar {
-	return grpcSidecar{ip: pod.IP, tok: g.Keys.Derive(token.Sidecar, string(ws.UID), pod.Epoch)}
+	return grpcSidecar{ip: pod.IP, epoch: pod.Epoch, tok: g.Keys.Derive(token.Sidecar, string(ws.UID), pod.Epoch)}
 }
 
 type grpcAgent struct{ ip, tok string }
@@ -80,7 +80,48 @@ func (a grpcAgent) Signals(ctx context.Context) (*signalsv1.Signals, error) {
 	return resp.GetSignals(), err
 }
 
-type grpcSidecar struct{ ip, tok string }
+func (a grpcAgent) client() (agentv1.AgentServiceClient, func(), error) {
+	conn, err := dial(a.ip, podspec.AgentGRPCPort, a.tok)
+	if err != nil {
+		return nil, nil, err
+	}
+	return agentv1.NewAgentServiceClient(conn), func() { _ = conn.Close() }, nil
+}
+
+func (a grpcAgent) StartService(ctx context.Context, svc *agentv1.Service) error {
+	c, done, err := a.client()
+	if err != nil {
+		return err
+	}
+	defer done()
+	_, err = c.StartService(ctx, &agentv1.StartServiceRequest{Service: svc})
+	return err
+}
+
+func (a grpcAgent) ListServices(ctx context.Context) ([]*agentv1.ServiceStatus, error) {
+	c, done, err := a.client()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	resp, err := c.ListServices(ctx, &agentv1.ListServicesRequest{})
+	return resp.GetServices(), err
+}
+
+func (a grpcAgent) StopService(ctx context.Context, name string) error {
+	c, done, err := a.client()
+	if err != nil {
+		return err
+	}
+	defer done()
+	_, err = c.StopService(ctx, &agentv1.StopServiceRequest{Name: name})
+	return err
+}
+
+type grpcSidecar struct {
+	ip, tok string
+	epoch   int64
+}
 
 func (s grpcSidecar) client() (sidecarv1.SidecarServiceClient, func(), error) {
 	conn, err := dial(s.ip, podspec.SidecarPort, s.tok)
@@ -131,4 +172,14 @@ func (s grpcSidecar) FilesReady(ctx context.Context) (time.Time, int64, error) {
 			return ev.GetAt().AsTime(), ev.GetBytes(), nil
 		}
 	}
+}
+
+func (s grpcSidecar) StartDeps(ctx context.Context, imageID string) (*sidecarv1.Deps, error) {
+	c, done, err := s.client()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	resp, err := c.StartDeps(ctx, &sidecarv1.StartDepsRequest{Epoch: s.epoch, ImageId: imageID})
+	return resp.GetDeps(), err
 }

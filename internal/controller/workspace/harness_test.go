@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
+	agentv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/agent/v1"
 	sidecarv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1"
 	signalsv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/signals/v1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/ops"
@@ -173,14 +175,20 @@ type fakePods struct {
 	snaps    map[string]*sidecarv1.Snapshot
 	blocked  map[string]bool // workspace UID -> snapshots stay RUNNING
 	failures map[string]sidecarv1.SnapshotErrorCode
-	signals  map[string]*signalsv1.Signals // workspace UID -> what its agent reports
+	signals  map[string]*signalsv1.Signals          // workspace UID -> what its agent reports
+	deps     map[string]*sidecarv1.Deps             // namespace/name -> its sidecar's restore
+	depImage map[string]string                      // namespace/name -> image the restore was asked for
+	upload   map[string]*sidecarv1.DepsUpload       // namespace/name -> what its snapshots report
+	services map[string]map[string]*agentv1.Service // pod IP -> running services
 	thaws    int
 	hook     func(what string) error // called before each side effect; an error fails it
 }
 
 func newFakePods(s *objstore.Mem) *fakePods {
 	return &fakePods{store: s, frozen: map[string]string{}, held: map[string]bool{}, snaps: map[string]*sidecarv1.Snapshot{},
-		blocked: map[string]bool{}, failures: map[string]sidecarv1.SnapshotErrorCode{}, signals: map[string]*signalsv1.Signals{}}
+		blocked: map[string]bool{}, failures: map[string]sidecarv1.SnapshotErrorCode{}, signals: map[string]*signalsv1.Signals{},
+		deps: map[string]*sidecarv1.Deps{}, depImage: map[string]string{}, upload: map[string]*sidecarv1.DepsUpload{},
+		services: map[string]map[string]*agentv1.Service{}}
 }
 
 func (f *fakePods) Agent(ws *sbxv1.Workspace, p workspace.Pod) workspace.Agent {
@@ -224,6 +232,62 @@ func (a fakeAgent) Signals(context.Context) (*signalsv1.Signals, error) {
 		return proto.Clone(s).(*signalsv1.Signals), nil
 	}
 	return &signalsv1.Signals{LastActivity: timestamppb.Now()}, nil
+}
+
+func (a fakeAgent) StartService(_ context.Context, svc *agentv1.Service) error {
+	a.f.mu.Lock()
+	defer a.f.mu.Unlock()
+	if a.f.services[a.ip] == nil {
+		a.f.services[a.ip] = map[string]*agentv1.Service{}
+	}
+	a.f.services[a.ip][svc.GetName()] = proto.Clone(svc).(*agentv1.Service)
+	return nil
+}
+
+func (a fakeAgent) ListServices(context.Context) ([]*agentv1.ServiceStatus, error) {
+	a.f.mu.Lock()
+	defer a.f.mu.Unlock()
+	var out []*agentv1.ServiceStatus
+	for _, svc := range a.f.services[a.ip] {
+		out = append(out, &agentv1.ServiceStatus{Service: svc, Running: true})
+	}
+	return out, nil
+}
+
+func (a fakeAgent) StopService(_ context.Context, name string) error {
+	a.f.mu.Lock()
+	defer a.f.mu.Unlock()
+	delete(a.f.services[a.ip], name)
+	return nil
+}
+
+// running lists the services running in ws's current pod.
+func (f *fakePods) running(ws *sbxv1.Workspace) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var names []string
+	if ws.Status.Pod != nil {
+		for name := range f.services[ws.Status.Pod.IP] {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// setDeps makes ns/name's sidecar report d for its restore (default: no
+// dependencies, ready at once). It can be set before the workspace exists.
+func (f *fakePods) setDeps(ns, name string, d *sidecarv1.Deps) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deps[ns+"/"+name] = d
+}
+
+// setUpload makes ns/name's snapshots report u for the dependency cache.
+func (f *fakePods) setUpload(ns, name string, u *sidecarv1.DepsUpload) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.upload[ns+"/"+name] = u
 }
 
 // setSignals makes ws's agent report s; nil makes it unreachable.
@@ -325,13 +389,25 @@ func (s fakeSidecar) state(ctx context.Context, attempt string, start bool) (*si
 		return nil, err
 	}
 	snap := &sidecarv1.Snapshot{AttemptId: attempt, State: sidecarv1.SnapshotState_SNAPSHOT_STATE_SUCCEEDED,
-		WipSha: "wip-" + attempt, BundleKey: key, Sha256: h, SizeBytes: int64(len(body)), NewBytes: 100}
+		WipSha: "wip-" + attempt, BundleKey: key, Sha256: h, SizeBytes: int64(len(body)), NewBytes: 100,
+		DepsUpload: f.upload[s.ws.Namespace+"/"+s.ws.Name]}
 	f.snaps[attempt] = snap
 	return snap, nil
 }
 
 func (s fakeSidecar) FilesReady(context.Context) (time.Time, int64, error) {
 	return time.Now(), 2048, nil
+}
+
+func (s fakeSidecar) StartDeps(_ context.Context, image string) (*sidecarv1.Deps, error) {
+	s.f.mu.Lock()
+	defer s.f.mu.Unlock()
+	key := s.ws.Namespace + "/" + s.ws.Name
+	s.f.depImage[key] = image
+	if d, ok := s.f.deps[key]; ok {
+		return proto.Clone(d).(*sidecarv1.Deps), nil
+	}
+	return &sidecarv1.Deps{State: sidecarv1.DepsState_DEPS_STATE_READY, Source: sidecarv1.DepsSource_DEPS_SOURCE_NONE}, nil
 }
 
 func (f *fakePods) block(ws *sbxv1.Workspace, on bool) {

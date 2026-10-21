@@ -87,7 +87,7 @@ func (k *Kubelet) Reconcile(ctx context.Context, req reconcile.Request) (reconci
 	pod.Status.ContainerStatuses = nil
 	for _, c := range pod.Spec.Containers {
 		pod.Status.ContainerStatuses = append(pod.Status.ContainerStatuses, corev1.ContainerStatus{
-			Name: c.Name, Image: c.Image, Ready: true, Started: ptr(true),
+			Name: c.Name, Image: c.Image, ImageID: c.Image + "@sha256:fake", Ready: true, Started: ptr(true),
 			State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: now}},
 		})
 	}

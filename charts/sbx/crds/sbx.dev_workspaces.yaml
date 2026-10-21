@@ -104,6 +104,43 @@ spec:
                   configuration.
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
+              services:
+                description: |-
+                  Services are long-running processes, such as a dev server, that the
+                  platform keeps running and starts again after every wake.
+                items:
+                  description: ServiceSpec declares a long-running process.
+                  properties:
+                    command:
+                      items:
+                        type: string
+                      minItems: 1
+                      type: array
+                    cwd:
+                      description: 'Cwd is relative to the workspace (default: its
+                        root).'
+                      type: string
+                    env:
+                      additionalProperties:
+                        type: string
+                      type: object
+                    name:
+                      pattern: ^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$
+                      type: string
+                    waitForDeps:
+                      description: |-
+                        WaitForDeps holds the start until the dependency directory is
+                        restored (default true).
+                      type: boolean
+                  required:
+                  - command
+                  - name
+                  type: object
+                maxItems: 16
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               source:
                 description: Source is the git repository the workspace starts from.
                 properties:
@@ -246,6 +283,28 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              deps:
+                description: 'Deps is this epoch''s dependency directory: where it
+                  came from.'
+                properties:
+                  bytes:
+                    description: Bytes is the archive size downloaded for a cache
+                      hit.
+                    format: int64
+                    type: integer
+                  key:
+                    description: 'Key is the shared cache key: lockfile, image digest
+                      and arch.'
+                    type: string
+                  profile:
+                    description: Profile is the package manager, for example "npm";
+                      empty if none.
+                    type: string
+                  source:
+                    description: 'Source is where the directory came from: None, Present,
+                      Cache or Install.'
+                    type: string
+                type: object
               epoch:
                 description: Epoch counts wakes. Each epoch gets its own pod, disk
                   and tokens.
@@ -339,6 +398,11 @@ spec:
                 type: object
               resolvedImage:
                 description: ResolvedImage is the workload image in use.
+                type: string
+              servicesApplied:
+                description: |-
+                  ServicesApplied records which spec.services were started in which
+                  epoch, so they are started once per wake and again when they change.
                 type: string
               sleep:
                 description: |-

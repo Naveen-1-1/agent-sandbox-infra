@@ -31,7 +31,24 @@ type Workspace struct {
 	RestoreBytes  prometheus.Histogram
 	Wakes         *prometheus.CounterVec
 	Suspends      *prometheus.CounterVec
+
+	DepsRestores    *prometheus.CounterVec
+	DepsBytes       prometheus.Histogram
+	DepsUploads     *prometheus.CounterVec
+	DepsUploadBytes prometheus.Histogram
 }
+
+// Dependency restore sources and upload results, the label values.
+const (
+	DepsSourceCache   = "cache"   // restored from the shared cache
+	DepsSourceInstall = "install" // a cache miss: installed
+	DepsSourcePresent = "present" // already in the workspace
+	DepsSourceFailed  = "failed"
+
+	DepsUploaded      = "uploaded"
+	DepsUploadSkipped = "skipped"
+	DepsUploadFailed  = "failed"
+)
 
 // NewWorkspace creates and registers the workspace metrics. count, if set,
 // backs the sbx_workspaces gauge at scrape time.
@@ -61,7 +78,26 @@ func NewWorkspace(reg prometheus.Registerer, count PhaseCounter) *Workspace {
 			Help: "Suspend attempts by result.",
 		}, []string{"result"}),
 	}
-	reg.MustRegister(m.PhaseDuration, m.WakeDuration, m.RestoreBytes, m.Wakes, m.Suspends)
+	m.DepsRestores = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "sbx_deps_restores_total",
+		Help: "Dependency directory restores by profile and source; cache over cache+install is the hit rate.",
+	}, []string{"profile", "source"})
+	m.DepsBytes = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "sbx_deps_restore_bytes",
+		Help:    "Bytes downloaded to restore a dependency directory from the cache.",
+		Buckets: bytesBuckets,
+	})
+	m.DepsUploads = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "sbx_deps_uploads_total",
+		Help: "Dependency archives offered to the cache during a suspend, by result.",
+	}, []string{"result"})
+	m.DepsUploadBytes = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "sbx_deps_upload_bytes",
+		Help:    "Size of dependency archives uploaded to the cache.",
+		Buckets: bytesBuckets,
+	})
+	reg.MustRegister(m.PhaseDuration, m.WakeDuration, m.RestoreBytes, m.Wakes, m.Suspends,
+		m.DepsRestores, m.DepsBytes, m.DepsUploads, m.DepsUploadBytes)
 	for _, r := range []string{SuspendCommitted, SuspendAborted, SuspendFailed} {
 		m.Suspends.WithLabelValues(r)
 	}

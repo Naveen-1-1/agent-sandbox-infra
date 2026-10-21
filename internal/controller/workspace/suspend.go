@@ -63,7 +63,19 @@ func (r *Reconciler) running(ctx context.Context, ws *sbxv1.Workspace) (reconcil
 		return reconcile.Result{RequeueAfter: 2 * time.Second}, client.IgnoreNotFound(err)
 	}
 
+	depsChanged, depsSettled, depsPending := r.trackDeps(ctx, ws, pod)
+	if r.ensureServices(ctx, ws, depsPending) || depsChanged {
+		hooks := []func(){}
+		if depsSettled != nil {
+			hooks = append(hooks, depsSettled)
+		}
+		return r.save(ctx, ws, hooks...)
+	}
+
 	v, suspend, recheck := r.sleepVerdict(ctx, ws)
+	if depsPending && (recheck == 0 || recheck > depsPoll) {
+		recheck = depsPoll
+	}
 	if !suspend {
 		r.forget(ws) // it may have been queued for a suspend it no longer wants
 		if sleepChanged(ws.Status.Sleep, v) {
@@ -172,6 +184,7 @@ func (r *Reconciler) suspending(ctx context.Context, ws *sbxv1.Workspace) (recon
 			if r.Snapshots != nil {
 				r.Snapshots.Succeeded(snap.GetSizeBytes(), snap.GetNewBytes(), took)
 			}
+			r.observeDepsUpload(snap.GetDepsUpload())
 		})
 
 	case sbxv1.SuspendSnapshotted, sbxv1.SuspendVerified:
@@ -249,6 +262,7 @@ func (r *Reconciler) tearDown(ctx context.Context, ws *sbxv1.Workspace) (reconci
 		ws.Status.Suspend, ws.Status.Pod, ws.Status.Volume = nil, nil, nil
 		setCondition(ws, sbxv1.ConditionReady, metav1.ConditionFalse, "Suspended", "saved to S3; wakes on the next request")
 		setCondition(ws, sbxv1.ConditionFilesReady, metav1.ConditionFalse, "Suspended", "no disk while suspended")
+		setCondition(ws, sbxv1.ConditionDepsReady, metav1.ConditionFalse, sbxv1.DepsReasonSuspended, "no disk while suspended")
 		return r.save(ctx, ws, r.setPhase(ws, sbxv1.PhaseSuspended), func() {
 			r.deleteSecret(ctx, ws, epoch)
 			if r.Metrics != nil {
@@ -338,6 +352,7 @@ func (r *Reconciler) startWake(ws *sbxv1.Workspace, trigger sbxv1.WakeTrigger) {
 	ws.Status.Volume = &sbxv1.VolumeStatus{ClaimName: claimName(ws, target)}
 	ws.Status.Timeline = &sbxv1.WakeTimeline{Trigger: trigger, RequestedAt: &metav1.MicroTime{Time: requested.Time}}
 	ws.Status.Sleep = nil
+	resetDeps(ws)
 	setCondition(ws, sbxv1.ConditionReady, metav1.ConditionFalse, "Waking", fmt.Sprintf("restoring into epoch %d", target))
 }
 

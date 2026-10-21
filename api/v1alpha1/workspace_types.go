@@ -68,7 +68,39 @@ type WorkspaceSpec struct {
 	// Policy overrides the cluster-wide sleep policy for this workspace.
 	// +optional
 	Policy *PolicyRef `json:"policy,omitempty"`
+
+	// Services are long-running processes, such as a dev server, that the
+	// platform keeps running and starts again after every wake.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=16
+	// +optional
+	Services []ServiceSpec `json:"services,omitempty"`
 }
+
+// ServiceSpec declares a long-running process.
+type ServiceSpec struct {
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`
+	Name string `json:"name"`
+
+	// +kubebuilder:validation:MinItems=1
+	Command []string `json:"command"`
+
+	// Cwd is relative to the workspace (default: its root).
+	// +optional
+	Cwd string `json:"cwd,omitempty"`
+
+	// +optional
+	Env map[string]string `json:"env,omitempty"`
+
+	// WaitForDeps holds the start until the dependency directory is
+	// restored (default true).
+	// +optional
+	WaitForDeps *bool `json:"waitForDeps,omitempty"`
+}
+
+// WaitsForDeps reports whether s starts only once dependencies are ready.
+func (s ServiceSpec) WaitsForDeps() bool { return s.WaitForDeps == nil || *s.WaitForDeps }
 
 // Source is a git repository and the revision to start from.
 type Source struct {
@@ -130,6 +162,52 @@ const (
 	// WakeTriggerAPI is an explicit wake through the management API.
 	WakeTriggerAPI WakeTrigger = "API"
 )
+
+// DepsStatus describes a dependency directory restore.
+type DepsStatus struct {
+	// Profile is the package manager, for example "npm"; empty if none.
+	// +optional
+	Profile string `json:"profile,omitempty"`
+	// Key is the shared cache key: lockfile, image digest and arch.
+	// +optional
+	Key string `json:"key,omitempty"`
+	// Source is where the directory came from: None, Present, Cache or Install.
+	// +optional
+	Source string `json:"source,omitempty"`
+	// Bytes is the archive size downloaded for a cache hit.
+	// +optional
+	Bytes int64 `json:"bytes,omitempty"`
+}
+
+// Dependency sources.
+const (
+	DepsSourceNone    = "None"
+	DepsSourcePresent = "Present"
+	DepsSourceCache   = "Cache"
+	DepsSourceInstall = "Install"
+)
+
+// DepsReady condition reasons. While the reason is Pending, Restoring or
+// Installing, commands that need the dependencies wait.
+const (
+	DepsReasonPending    = "Pending"
+	DepsReasonRestoring  = "Restoring"
+	DepsReasonInstalling = "Installing"
+	DepsReasonFailed     = "Failed"
+	DepsReasonReady      = "Ready"
+	DepsReasonSuspended  = "Suspended"
+)
+
+// DepsPending reports whether ws's dependency directory is still being
+// restored for its current epoch.
+func DepsPending(ws *Workspace) bool {
+	for _, c := range ws.Status.Conditions {
+		if c.Type == ConditionDepsReady {
+			return c.Reason == DepsReasonPending || c.Reason == DepsReasonRestoring || c.Reason == DepsReasonInstalling
+		}
+	}
+	return false
+}
 
 // SleepStatus is a sleep policy verdict.
 type SleepStatus struct {
@@ -266,6 +344,15 @@ type WorkspaceStatus struct {
 	// so a restarted controller doesn't think every workspace is idle.
 	// +optional
 	LastActivityAt *metav1.Time `json:"lastActivityAt,omitempty"`
+
+	// Deps is this epoch's dependency directory: where it came from.
+	// +optional
+	Deps *DepsStatus `json:"deps,omitempty"`
+
+	// ServicesApplied records which spec.services were started in which
+	// epoch, so they are started once per wake and again when they change.
+	// +optional
+	ServicesApplied string `json:"servicesApplied,omitempty"`
 
 	// Sleep is the sleep policy's latest verdict: why the workspace is still
 	// up and when it will suspend, or why it suspended.

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
+	agentv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/agent/v1"
 	sidecarv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1"
 	signalsv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/signals/v1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/policy"
@@ -18,6 +19,10 @@ type Agent interface {
 	Thaw(ctx context.Context, attemptID string) error
 	// Signals reports in-pod activity for the sleep policy.
 	Signals(ctx context.Context) (*signalsv1.Signals, error)
+	// StartService runs a declared service (a no-op if it runs unchanged).
+	StartService(ctx context.Context, s *agentv1.Service) error
+	ListServices(ctx context.Context) ([]*agentv1.ServiceStatus, error)
+	StopService(ctx context.Context, name string) error
 }
 
 // GatewaySignals is what the gateway replicas know about a workspace's
@@ -35,6 +40,8 @@ type Sidecar interface {
 	// FilesReady reports when this epoch's files were restored and how many
 	// bytes were downloaded.
 	FilesReady(ctx context.Context) (time.Time, int64, error)
+	// StartDeps starts the dependency restore (idempotent) and reports it.
+	StartDeps(ctx context.Context, imageID string) (*sidecarv1.Deps, error)
 }
 
 // Pod identifies the pod serving an epoch.
