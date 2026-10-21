@@ -127,7 +127,7 @@ kind-down: ## Delete the kind cluster (REGISTRY_TOO=1 also removes the registry)
 ARCH     ?= $(shell $(GO) env GOARCH)
 REGISTRY ?= localhost:5001
 BINARIES := sbx-agent sbx-sidecar sbx-controller sbx-gateway
-IMAGES   := sbx-runtime sbx-controller sbx-gateway sbx-fixtures
+IMAGES   ?= sbx-runtime sbx-controller sbx-gateway sbx-fixtures
 # Content-derived tag; computed after the binaries are built.
 TAG = $(shell hack/image-tag.sh $(ARCH))
 
@@ -171,7 +171,7 @@ deploy: push charts/sbx/charts/.deps ## Build, push and install the platform (VA
 	@# Helm installs CRDs only on a first install; apply every chart's on each deploy.
 	helm show crds charts/sbx | kubectl apply --server-side --force-conflicts -f - >/dev/null
 	helm upgrade --install sbx charts/sbx --namespace $(NAMESPACE) --create-namespace \
-	  -f $(VALUES) --set images.tag=$(TAG) --wait --timeout 8m
+	  -f $(VALUES) --set images.registry=$(REGISTRY) --set images.tag=$(TAG) --wait --timeout 8m
 
 .PHONY: grafana
 grafana: ## Open Grafana with the sbx dashboards on http://127.0.0.1:3000 (anonymous viewer on kind).
@@ -191,7 +191,7 @@ DEMO_ARGS  ?=
 demo: ## Play an agent session that sleeps and wakes (run `make kind-up deploy` first).
 	@runtime=$$(kubectl -n $(NAMESPACE) get deploy sbx-controller \
 	  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SBX_RUNTIME_IMAGE")].value}'); \
-	  KIND_CLUSTER=$(KIND_CLUSTER) hack/prepull.sh "$$runtime" "$(DEMO_IMAGE)"
+	  NAMESPACE=$(NAMESPACE) hack/prepull.sh "$$runtime" "$(DEMO_IMAGE)"
 	$(GO) build -o bin/sbxctl ./cmd/sbxctl
 	@SBX_TOKEN=$$(kubectl -n $(NAMESPACE) get secret sbx-gateway-admin -o jsonpath='{.data.token}' | base64 -d) \
 	  bin/sbxctl demo --image $(DEMO_IMAGE) $(DEMO_ARGS)
