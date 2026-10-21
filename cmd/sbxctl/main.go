@@ -175,7 +175,7 @@ func run(args []string) error {
 	case "demo":
 		fs := flag.NewFlagSet("demo", flag.ContinueOnError)
 		o := demo.Options{Out: os.Stdout}
-		fs.StringVar(&o.RepoURL, "repo", "http://sbx-fixtures.sbx-system.svc/hello-node.git", "repository to start from")
+		fs.StringVar(&o.RepoURL, "repo", "http://sbx-fixtures.sbx-system.svc/hello-deps.git", "repository to start from")
 		fs.StringVar(&o.Image, "image", "", "workload image (needs git; default: the platform's)")
 		fs.StringVar(&o.Name, "name", "", "workspace name (default: generated)")
 		fs.StringVar(&o.Namespace, "namespace", "", "namespace (default: the gateway's)")

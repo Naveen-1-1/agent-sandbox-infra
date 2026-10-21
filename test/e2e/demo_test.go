@@ -23,7 +23,7 @@ func TestDemo(t *testing.T) {
 	}
 	var out strings.Builder
 	res, err := demo.Run(framework.Ctx(t, 10*time.Minute), gw, demo.Options{
-		RepoURL: p.FixturesURL + "/hello-node.git", Image: image, Thinking: 12 * time.Second, Out: &out,
+		RepoURL: p.FixturesURL + "/hello-deps.git", Image: image, Thinking: 12 * time.Second, Out: &out,
 	})
 	t.Log("\n" + out.String())
 	if err != nil {
@@ -32,8 +32,14 @@ func TestDemo(t *testing.T) {
 	if res.Hinted.Waited > time.Second {
 		t.Errorf("the hinted wake was visible: the first command waited %s", res.Hinted.Waited)
 	}
+	if res.Hinted.DepsWaited > time.Second {
+		t.Errorf("after the hint, npm test still waited %s for node_modules", res.Hinted.DepsWaited)
+	}
 	if res.Unhinted.Waited < time.Second {
 		t.Errorf("the unhinted command waited only %s; the second wake didn't happen", res.Unhinted.Waited)
+	}
+	if res.Unhinted.DepsSource != "Cache" {
+		t.Errorf("node_modules on the last wake came from %q, want the cache", res.Unhinted.DepsSource)
 	}
 	if !res.Hinted.StateIntact || !res.Unhinted.StateIntact {
 		t.Error("git state changed across a sleep")

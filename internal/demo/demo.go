@@ -48,24 +48,31 @@ type Result struct {
 // Wake is one wake as the agent saw it. Stage times are from the wake
 // request (the hint, or the agent's own command).
 type Wake struct {
-	Node        string        `json:"node"`
-	PodAt       time.Duration `json:"podAt"`
-	FilesAt     time.Duration `json:"filesAt"`
-	ServingAt   time.Duration `json:"servingAt"`
-	CommandAt   time.Duration `json:"commandAt"` // when the agent's first command was sent
-	Waited      time.Duration `json:"waited"`    // how long that command was held for the wake
+	Node       string        `json:"node"`
+	PodAt      time.Duration `json:"podAt"`
+	FilesAt    time.Duration `json:"filesAt"`
+	ServingAt  time.Duration `json:"servingAt"`
+	DepsAt     time.Duration `json:"depsAt"`
+	DepsSource string        `json:"depsSource"`
+	CommandAt  time.Duration `json:"commandAt"` // when the agent's first command (npm test) was sent
+	Waited     time.Duration `json:"waited"`    // how long that command was held for the wake
+	// DepsWaited is how long it then waited for node_modules.
+	DepsWaited  time.Duration `json:"depsWaited"`
 	StateIntact bool          `json:"stateIntact"`
 }
 
-// The agent's work in its first turn, and the command that fingerprints it.
+// The agent's work in its first turn (on the hello-deps fixture), the
+// command that fingerprints it, and the agent's first tool call after the
+// user replies, which needs the dependencies.
 const (
 	turnScript = `git checkout -q -b agent/feature &&
-printf 'export const feature = () => "ready";\n' > src/feature.js &&
-git add src/feature.js &&
-printf '// TODO: call feature()\n' >> src/index.js`
-	planFile    = "PLAN.md"
-	planContent = "# Plan\n\n- add src/feature.js\n- call it from src/index.js\n"
-	fingerprint = `git status --short --branch && sha256sum src/feature.js src/index.js PLAN.md`
+printf 'module.exports = () => "ready";\n' > feature.js &&
+git add feature.js &&
+printf '// TODO: use feature.js\n' >> test.js`
+	planFile     = "PLAN.md"
+	planContent  = "# Plan\n\n- add feature.js\n- use it from test.js\n"
+	fingerprint  = `git status --short --branch && sha256sum feature.js test.js PLAN.md`
+	firstCommand = "npm test --silent"
 )
 
 // Run plays the session. On success the workspace is deleted unless
@@ -134,6 +141,10 @@ func (d *run) play(ctx context.Context) error {
 	}
 	d.res.Provisioned = time.Since(start)
 	d.say("   %s is serving on %s after %s (the first start pulls the image)", d.res.Workspace, d.ws.Node, secs(d.res.Provisioned))
+	if d.ws, err = d.waitDeps(ctx); err != nil {
+		return err
+	}
+	d.say("   dependencies: %s", depsSummary(d.ws))
 
 	d.header("Agent turn: write a plan, make a branch, stage one change, leave another unstaged")
 	if err := d.c.WriteFile(ctx, d.ns, d.name, planFile, []byte(planContent)); err != nil {
@@ -170,7 +181,7 @@ func (d *run) play(ctx context.Context) error {
 		return ctx.Err()
 	case <-time.After(d.o.Thinking):
 	}
-	if d.res.Hinted, err = d.firstCommand(ctx, hintAt); err != nil {
+	if d.res.Hinted, err = d.reply(ctx, hintAt); err != nil {
 		return err
 	}
 	d.report(d.res.Hinted, "wake-hint", "the wake was hidden behind the thinking")
@@ -179,10 +190,10 @@ func (d *run) play(ctx context.Context) error {
 		return err
 	}
 	d.header("The user replies again, this time without a wake-hint")
-	if d.res.Unhinted, err = d.firstCommand(ctx, time.Now()); err != nil {
+	if d.res.Unhinted, err = d.reply(ctx, time.Now()); err != nil {
 		return err
 	}
-	d.report(d.res.Unhinted, "command", "the agent waited for the whole wake")
+	d.report(d.res.Unhinted, "request", "the agent waited for the whole wake")
 
 	d.summary()
 	if !d.res.Hinted.StateIntact || !d.res.Unhinted.StateIntact {
@@ -209,20 +220,32 @@ func (d *run) endTurn(ctx context.Context) error {
 	return nil
 }
 
-// firstCommand sends the agent's first tool call and measures its wake;
-// requested is when the wake was asked for.
-func (d *run) firstCommand(ctx context.Context, requested time.Time) (Wake, error) {
+// reply sends the agent's first tool call after the user's reply (npm
+// test, which needs node_modules) and measures its wake; requested is when
+// the wake was asked for. It then checks the git state survived.
+func (d *run) reply(ctx context.Context, requested time.Time) (Wake, error) {
 	sent := time.Now()
-	out, err := d.exec(ctx, fingerprint)
+	out, err := d.exec(ctx, firstCommand)
 	if err != nil {
 		return Wake{}, err
 	}
-	w := Wake{CommandAt: sent.Sub(requested), Waited: time.Duration(out.WaitedMillis) * time.Millisecond, StateIntact: out.Stdout == d.want}
+	w := Wake{
+		CommandAt: sent.Sub(requested), Waited: millisDuration(out.WaitedMillis),
+		DepsWaited: millisDuration(out.DepsWaitedMillis),
+	}
+	fp, err := d.exec(ctx, fingerprint)
+	if err != nil {
+		return Wake{}, err
+	}
+	w.StateIntact = fp.Stdout == d.want
 	ws, err := d.c.Get(ctx, d.ns, d.name)
 	if err != nil {
 		return Wake{}, err
 	}
 	d.ws, w.Node = ws, ws.Node
+	if ws.Deps != nil {
+		w.DepsSource = ws.Deps.Source
+	}
 	if tl := ws.Timeline; tl != nil && tl.RequestedAt != nil {
 		at := func(t *time.Time) time.Duration {
 			if t == nil {
@@ -230,16 +253,50 @@ func (d *run) firstCommand(ctx context.Context, requested time.Time) (Wake, erro
 			}
 			return t.Sub(*tl.RequestedAt)
 		}
-		w.PodAt, w.FilesAt, w.ServingAt = at(tl.PodScheduledAt), at(tl.FilesReadyAt), at(tl.ReadyAt)
+		w.PodAt, w.FilesAt, w.ServingAt, w.DepsAt = at(tl.PodScheduledAt), at(tl.FilesReadyAt), at(tl.ReadyAt), at(tl.DepsReadyAt)
 	}
 	return w, nil
 }
 
-func (d *run) report(w Wake, first, verdict string) {
-	if w.Waited > 0 {
-		verdict = fmt.Sprintf("%s: it waited %s", verdict, secs(w.Waited))
+// waitDeps waits for the dependency restore to settle.
+func (d *run) waitDeps(ctx context.Context) (*sbxapi.Workspace, error) {
+	for {
+		ws, err := d.c.Get(ctx, d.ns, d.name)
+		if err != nil {
+			return nil, err
+		}
+		if ws.Deps == nil || !ws.Deps.Pending {
+			return ws, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
-	d.say("   the first command waited %s; %s", millis(w.Waited), verdict)
+}
+
+func depsSummary(ws *sbxapi.Workspace) string {
+	switch {
+	case ws.Deps == nil:
+		return "none reported"
+	case !ws.Deps.Ready:
+		return "failed: " + ws.Deps.Message
+	}
+	return ws.Deps.Message
+}
+
+func millisDuration(ms int64) time.Duration { return time.Duration(ms) * time.Millisecond }
+
+func (d *run) report(w Wake, first, verdict string) {
+	if waited := w.Waited + w.DepsWaited; waited > 0 {
+		verdict = fmt.Sprintf("%s: it waited %s", verdict, secs(waited))
+	}
+	d.say("   npm test waited %s for the wake and %s for node_modules; %s", millis(w.Waited), millis(w.DepsWaited), verdict)
+	deps := "node_modules restored from the cache"
+	if w.DepsSource == "Install" {
+		deps = "node_modules installed (a cache miss)"
+	}
 	rows := []struct {
 		label string
 		at    time.Duration
@@ -248,8 +305,9 @@ func (d *run) report(w Wake, first, verdict string) {
 		{first, 0, ""},
 		{"pod", w.PodAt, "scheduled on " + w.Node},
 		{"files", w.FilesAt, "restored from S3"},
-		{"serving", w.ServingAt, ""},
-		{"command", w.CommandAt + w.Waited, "answered; waited " + millis(w.Waited)},
+		{"serving", w.ServingAt, "commands that don't need dependencies run from here"},
+		{"deps", w.DepsAt, deps},
+		{"npm test", w.CommandAt + w.Waited + w.DepsWaited, "ran"},
 	}
 	scale := time.Duration(0)
 	for _, r := range rows {
@@ -267,10 +325,11 @@ func (d *run) report(w Wake, first, verdict string) {
 
 func (d *run) summary() {
 	h, u := d.res.Hinted, d.res.Unhinted
-	d.say("\nSummary            with hint   without")
-	d.say("  agent waited     %9s  %8s", secs(h.Waited), secs(u.Waited))
-	d.say("  files restored   %9s  %8s", secs(h.FilesAt), secs(u.FilesAt))
-	d.say("  serving          %9s  %8s", secs(h.ServingAt), secs(u.ServingAt))
+	d.say("\nSummary              with hint   without")
+	d.say("  agent waited       %9s  %8s", secs(h.Waited+h.DepsWaited), secs(u.Waited+u.DepsWaited))
+	d.say("  files restored     %9s  %8s", secs(h.FilesAt), secs(u.FilesAt))
+	d.say("  serving            %9s  %8s", secs(h.ServingAt), secs(u.ServingAt))
+	d.say("  node_modules ready %9s  %8s", secs(h.DepsAt), secs(u.DepsAt))
 	d.say("  (stage times are from the wake request; the hinted wake overlapped %s of thinking)", secs(d.o.Thinking))
 }
 
