@@ -27,6 +27,7 @@ type Server struct {
 	sidecarv1.UnimplementedSidecarServiceServer
 	cfg    Config
 	broker brokerv1.BrokerServiceClient
+	deps   *Deps
 	snaps  *Snapshotter
 	grpc   *grpc.Server
 }
@@ -35,7 +36,8 @@ type Server struct {
 // present cfg.SidecarToken; gRPC health is open for kubelet probes.
 func NewServer(cfg Config, broker brokerv1.BrokerServiceClient) *Server {
 	cfg.defaults()
-	s := &Server{cfg: cfg, broker: broker, snaps: NewSnapshotter(cfg, broker)}
+	deps := NewDeps(cfg, broker)
+	s := &Server{cfg: cfg, broker: broker, deps: deps, snaps: NewSnapshotter(cfg, broker, deps)}
 	s.grpc = grpc.NewServer(grpc.ChainUnaryInterceptor(s.auth), grpc.ChainStreamInterceptor(s.authStream))
 	sidecarv1.RegisterSidecarServiceServer(s.grpc, s)
 	healthv1.RegisterHealthServer(s.grpc, health.NewServer())
@@ -72,6 +74,7 @@ func (s *Server) authStream(srv any, ss grpc.ServerStream, info *grpc.StreamServ
 // Serve runs until ctx ends. It also uploads the base bundle in the
 // background if the restore asked for one.
 func (s *Server) Serve(ctx context.Context, l net.Listener) error {
+	defer s.deps.Close()
 	defer s.snaps.Close()
 	bg, stopBG := context.WithCancel(ctx)
 	defer stopBG()
@@ -185,4 +188,13 @@ func (s *Server) WatchProgress(_ *sidecarv1.WatchProgressRequest, stream sidecar
 	}
 	<-stream.Context().Done()
 	return nil
+}
+
+// StartDeps starts this epoch's dependency restore, or reports it.
+func (s *Server) StartDeps(_ context.Context, r *sidecarv1.StartDepsRequest) (*sidecarv1.StartDepsResponse, error) {
+	d, err := s.deps.Start(r)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return &sidecarv1.StartDepsResponse{Deps: d}, nil
 }

@@ -92,7 +92,9 @@ func config(log *slog.Logger) (sidecar.Config, error) {
 			MaxNewBytes:    envInt("SBX_SNAPSHOT_MAX_NEW_BYTES"),
 			MaxBundleBytes: envInt("SBX_SNAPSHOT_MAX_BUNDLE_BYTES"),
 		},
-		Log: log,
+		Installer:    sidecar.AgentInstaller{Addr: os.Getenv("SBX_AGENT_ADDR"), Token: readToken("agent-token")},
+		DepsMaxBytes: envInt("SBX_DEPS_MAX_BYTES"),
+		Log:          log,
 	}
 	for k, v := range map[string]string{
 		"SBX_WORKSPACE": cfg.Workspace, "SBX_WORKSPACE_UID": cfg.WorkspaceUID, "SBX_BROKER_ADDR": cfg.BrokerAddr,

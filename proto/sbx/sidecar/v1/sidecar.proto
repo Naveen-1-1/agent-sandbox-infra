@@ -19,6 +19,72 @@ service SidecarService {
   // WatchProgress streams restore milestones for the wake timeline. Stages
   // already reached are sent first.
   rpc WatchProgress(WatchProgressRequest) returns (stream WatchProgressResponse);
+  // StartDeps starts restoring this epoch's dependency directory, from the
+  // shared cache or by installing it, or reports the restore already
+  // started. The workload keeps running meanwhile.
+  rpc StartDeps(StartDepsRequest) returns (StartDepsResponse);
+}
+
+message StartDepsRequest {
+  int64 epoch = 1;
+  // The workload container's image by digest (the pod's imageID). Part of
+  // the cache key, since it pins the runtime and package manager.
+  string image_id = 2;
+}
+
+message StartDepsResponse {
+  Deps deps = 1;
+}
+
+// Deps is the state of this epoch's dependency restore.
+message Deps {
+  DepsState state = 1;
+  // Profile, for example "npm"; empty when the workspace has none.
+  string profile = 2;
+  // Cache key.
+  string key = 3;
+  DepsSource source = 4;
+  // Archive bytes downloaded, for a cache hit.
+  int64 bytes = 5;
+  // Why it failed, or the end of the install's output.
+  string message = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp finished_at = 8;
+  // Hex SHA-256 of the lockfile the directory was built from.
+  string lock_sha256 = 9;
+  // An archive of an install this sidecar ran has been uploaded.
+  bool uploaded = 10;
+}
+
+enum DepsState {
+  DEPS_STATE_UNSPECIFIED = 0;
+  DEPS_STATE_RESTORING = 1;
+  DEPS_STATE_INSTALLING = 2;
+  DEPS_STATE_READY = 3;
+  // Commands that need the dependencies run anyway and report the error.
+  DEPS_STATE_FAILED = 4;
+}
+
+// DepsSource says where a ready dependency directory came from.
+enum DepsSource {
+  DEPS_SOURCE_UNSPECIFIED = 0;
+  // The workspace has no dependencies we know how to restore.
+  DEPS_SOURCE_NONE = 1;
+  // The directory was already in the workspace (committed, say).
+  DEPS_SOURCE_PRESENT = 2;
+  DEPS_SOURCE_CACHE = 3;
+  DEPS_SOURCE_INSTALL = 4;
+}
+
+// DepsUpload reports what a snapshot did with the dependency directory.
+message DepsUpload {
+  string key = 1;
+  int64 size_bytes = 2;
+  bool uploaded = 3;
+  // Why nothing was uploaded, for example "cache hit" or "lockfile changed".
+  string skipped = 4;
+  // An upload failure. It never fails the snapshot.
+  string error = 5;
 }
 
 message IdentifyRequest {}
@@ -80,6 +146,8 @@ message Snapshot {
   google.protobuf.Timestamp finished_at = 11;
   // Uncompressed size of the files new since the base.
   int64 new_bytes = 12;
+  // The dependency cache upload that rode along, if any.
+  DepsUpload deps_upload = 13;
 }
 
 // SnapshotState is where a snapshot attempt is.

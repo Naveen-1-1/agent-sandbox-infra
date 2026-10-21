@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/depcache"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapshot"
 )
 
@@ -37,6 +39,15 @@ type Config struct {
 	Limits          snapshot.Limits
 	SnapshotTimeout time.Duration
 
+	// Installer runs dependency installs in the workload container.
+	Installer Installer
+	// Arch is part of the dependency cache key (default: this binary's).
+	Arch               string
+	DepsLimits         depcache.Limits
+	DepsMaxBytes       int64 // largest archive uploaded to the cache
+	DepsInstallTimeout time.Duration
+	DepsUploadTimeout  time.Duration
+
 	HTTP *http.Client
 	Log  *slog.Logger
 	Now  func() time.Time
@@ -54,6 +65,15 @@ func (c *Config) defaults() {
 	}
 	if c.SnapshotTimeout <= 0 {
 		c.SnapshotTimeout = 10 * time.Minute
+	}
+	if c.Arch == "" {
+		c.Arch = runtime.GOARCH
+	}
+	if c.DepsInstallTimeout <= 0 {
+		c.DepsInstallTimeout = 15 * time.Minute
+	}
+	if c.DepsUploadTimeout <= 0 {
+		c.DepsUploadTimeout = 3 * time.Minute
 	}
 }
 

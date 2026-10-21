@@ -254,7 +254,7 @@ func TestSnapshotRefusedForSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	gf.Write(t, filepath.Join(cfg.Root, "deploy.sh"), "export AWS_KEY=AKIA"+strings.Repeat("Z", 16)+"\n")
-	s := NewSnapshotter(cfg, b)
+	s := NewSnapshotter(cfg, b, nil)
 	defer s.Close()
 	if _, err := s.Start(startReq("a1", 1, f.base)); err != nil {
 		t.Fatal(err)
@@ -277,7 +277,7 @@ func TestSnapshotAttemptsAreIdempotentAndSurviveRestart(t *testing.T) {
 	}
 	gf.Write(t, filepath.Join(cfg.Root, "x.txt"), "x\n")
 
-	s := NewSnapshotter(cfg, b)
+	s := NewSnapshotter(cfg, b, nil)
 	if _, err := s.Start(startReq("a1", 1, f.base)); err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestSnapshotAttemptsAreIdempotentAndSurviveRestart(t *testing.T) {
 	first := waitFor(t, s, "a1")
 	s.Close()
 
-	restarted := NewSnapshotter(cfg, b)
+	restarted := NewSnapshotter(cfg, b, nil)
 	defer restarted.Close()
 	again, err := restarted.Start(startReq("a1", 1, f.base))
 	if err != nil {

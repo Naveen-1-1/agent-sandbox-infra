@@ -142,6 +142,10 @@ spec:
       value: "524288000"
     - name: SBX_SNAPSHOT_MAX_BUNDLE_BYTES
       value: "524288000"
+    - name: SBX_DEPS_MAX_BYTES
+      value: "0"
+    - name: SBX_AGENT_ADDR
+      value: 127.0.0.1:9090
     image: localhost:5001/sbx-runtime:dev
     imagePullPolicy: IfNotPresent
     name: sbx-sidecar
@@ -196,4 +200,6 @@ spec:
         path: broker-token
       - key: sidecar-token
         path: sidecar-token
+      - key: agent-token
+        path: agent-token
       secretName: ws-demo-e3-tokens

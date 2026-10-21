@@ -22,6 +22,120 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type DepsState int32
+
+const (
+	DepsState_DEPS_STATE_UNSPECIFIED DepsState = 0
+	DepsState_DEPS_STATE_RESTORING   DepsState = 1
+	DepsState_DEPS_STATE_INSTALLING  DepsState = 2
+	DepsState_DEPS_STATE_READY       DepsState = 3
+	// Commands that need the dependencies run anyway and report the error.
+	DepsState_DEPS_STATE_FAILED DepsState = 4
+)
+
+// Enum value maps for DepsState.
+var (
+	DepsState_name = map[int32]string{
+		0: "DEPS_STATE_UNSPECIFIED",
+		1: "DEPS_STATE_RESTORING",
+		2: "DEPS_STATE_INSTALLING",
+		3: "DEPS_STATE_READY",
+		4: "DEPS_STATE_FAILED",
+	}
+	DepsState_value = map[string]int32{
+		"DEPS_STATE_UNSPECIFIED": 0,
+		"DEPS_STATE_RESTORING":   1,
+		"DEPS_STATE_INSTALLING":  2,
+		"DEPS_STATE_READY":       3,
+		"DEPS_STATE_FAILED":      4,
+	}
+)
+
+func (x DepsState) Enum() *DepsState {
+	p := new(DepsState)
+	*p = x
+	return p
+}
+
+func (x DepsState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DepsState) Descriptor() protoreflect.EnumDescriptor {
+	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[0].Descriptor()
+}
+
+func (DepsState) Type() protoreflect.EnumType {
+	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[0]
+}
+
+func (x DepsState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DepsState.Descriptor instead.
+func (DepsState) EnumDescriptor() ([]byte, []int) {
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{0}
+}
+
+// DepsSource says where a ready dependency directory came from.
+type DepsSource int32
+
+const (
+	DepsSource_DEPS_SOURCE_UNSPECIFIED DepsSource = 0
+	// The workspace has no dependencies we know how to restore.
+	DepsSource_DEPS_SOURCE_NONE DepsSource = 1
+	// The directory was already in the workspace (committed, say).
+	DepsSource_DEPS_SOURCE_PRESENT DepsSource = 2
+	DepsSource_DEPS_SOURCE_CACHE   DepsSource = 3
+	DepsSource_DEPS_SOURCE_INSTALL DepsSource = 4
+)
+
+// Enum value maps for DepsSource.
+var (
+	DepsSource_name = map[int32]string{
+		0: "DEPS_SOURCE_UNSPECIFIED",
+		1: "DEPS_SOURCE_NONE",
+		2: "DEPS_SOURCE_PRESENT",
+		3: "DEPS_SOURCE_CACHE",
+		4: "DEPS_SOURCE_INSTALL",
+	}
+	DepsSource_value = map[string]int32{
+		"DEPS_SOURCE_UNSPECIFIED": 0,
+		"DEPS_SOURCE_NONE":        1,
+		"DEPS_SOURCE_PRESENT":     2,
+		"DEPS_SOURCE_CACHE":       3,
+		"DEPS_SOURCE_INSTALL":     4,
+	}
+)
+
+func (x DepsSource) Enum() *DepsSource {
+	p := new(DepsSource)
+	*p = x
+	return p
+}
+
+func (x DepsSource) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DepsSource) Descriptor() protoreflect.EnumDescriptor {
+	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[1].Descriptor()
+}
+
+func (DepsSource) Type() protoreflect.EnumType {
+	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[1]
+}
+
+func (x DepsSource) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DepsSource.Descriptor instead.
+func (DepsSource) EnumDescriptor() ([]byte, []int) {
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{1}
+}
+
 // VolumeState is the restore state recorded on the workspace disk.
 type VolumeState int32
 
@@ -58,11 +172,11 @@ func (x VolumeState) String() string {
 }
 
 func (VolumeState) Descriptor() protoreflect.EnumDescriptor {
-	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[0].Descriptor()
+	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[2].Descriptor()
 }
 
 func (VolumeState) Type() protoreflect.EnumType {
-	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[0]
+	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[2]
 }
 
 func (x VolumeState) Number() protoreflect.EnumNumber {
@@ -71,7 +185,7 @@ func (x VolumeState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VolumeState.Descriptor instead.
 func (VolumeState) EnumDescriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{0}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{2}
 }
 
 // SnapshotState is where a snapshot attempt is.
@@ -111,11 +225,11 @@ func (x SnapshotState) String() string {
 }
 
 func (SnapshotState) Descriptor() protoreflect.EnumDescriptor {
-	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[1].Descriptor()
+	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[3].Descriptor()
 }
 
 func (SnapshotState) Type() protoreflect.EnumType {
-	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[1]
+	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[3]
 }
 
 func (x SnapshotState) Number() protoreflect.EnumNumber {
@@ -124,7 +238,7 @@ func (x SnapshotState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SnapshotState.Descriptor instead.
 func (SnapshotState) EnumDescriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{1}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{3}
 }
 
 // SnapshotErrorCode classifies snapshot failures.
@@ -174,11 +288,11 @@ func (x SnapshotErrorCode) String() string {
 }
 
 func (SnapshotErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[2].Descriptor()
+	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[4].Descriptor()
 }
 
 func (SnapshotErrorCode) Type() protoreflect.EnumType {
-	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[2]
+	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[4]
 }
 
 func (x SnapshotErrorCode) Number() protoreflect.EnumNumber {
@@ -187,7 +301,7 @@ func (x SnapshotErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SnapshotErrorCode.Descriptor instead.
 func (SnapshotErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{2}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{4}
 }
 
 // Stage is a restore milestone.
@@ -230,11 +344,11 @@ func (x Stage) String() string {
 }
 
 func (Stage) Descriptor() protoreflect.EnumDescriptor {
-	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[3].Descriptor()
+	return file_sbx_sidecar_v1_sidecar_proto_enumTypes[5].Descriptor()
 }
 
 func (Stage) Type() protoreflect.EnumType {
-	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[3]
+	return &file_sbx_sidecar_v1_sidecar_proto_enumTypes[5]
 }
 
 func (x Stage) Number() protoreflect.EnumNumber {
@@ -243,7 +357,307 @@ func (x Stage) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Stage.Descriptor instead.
 func (Stage) EnumDescriptor() ([]byte, []int) {
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{5}
+}
+
+type StartDepsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Epoch int64                  `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// The workload container's image by digest (the pod's imageID). Part of
+	// the cache key, since it pins the runtime and package manager.
+	ImageId       string `protobuf:"bytes,2,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartDepsRequest) Reset() {
+	*x = StartDepsRequest{}
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartDepsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartDepsRequest) ProtoMessage() {}
+
+func (x *StartDepsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartDepsRequest.ProtoReflect.Descriptor instead.
+func (*StartDepsRequest) Descriptor() ([]byte, []int) {
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *StartDepsRequest) GetEpoch() int64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *StartDepsRequest) GetImageId() string {
+	if x != nil {
+		return x.ImageId
+	}
+	return ""
+}
+
+type StartDepsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deps          *Deps                  `protobuf:"bytes,1,opt,name=deps,proto3" json:"deps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartDepsResponse) Reset() {
+	*x = StartDepsResponse{}
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartDepsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartDepsResponse) ProtoMessage() {}
+
+func (x *StartDepsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartDepsResponse.ProtoReflect.Descriptor instead.
+func (*StartDepsResponse) Descriptor() ([]byte, []int) {
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *StartDepsResponse) GetDeps() *Deps {
+	if x != nil {
+		return x.Deps
+	}
+	return nil
+}
+
+// Deps is the state of this epoch's dependency restore.
+type Deps struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	State DepsState              `protobuf:"varint,1,opt,name=state,proto3,enum=sbx.sidecar.v1.DepsState" json:"state,omitempty"`
+	// Profile, for example "npm"; empty when the workspace has none.
+	Profile string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Cache key.
+	Key    string     `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	Source DepsSource `protobuf:"varint,4,opt,name=source,proto3,enum=sbx.sidecar.v1.DepsSource" json:"source,omitempty"`
+	// Archive bytes downloaded, for a cache hit.
+	Bytes int64 `protobuf:"varint,5,opt,name=bytes,proto3" json:"bytes,omitempty"`
+	// Why it failed, or the end of the install's output.
+	Message    string                 `protobuf:"bytes,6,opt,name=message,proto3" json:"message,omitempty"`
+	StartedAt  *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	// Hex SHA-256 of the lockfile the directory was built from.
+	LockSha256 string `protobuf:"bytes,9,opt,name=lock_sha256,json=lockSha256,proto3" json:"lock_sha256,omitempty"`
+	// An archive of an install this sidecar ran has been uploaded.
+	Uploaded      bool `protobuf:"varint,10,opt,name=uploaded,proto3" json:"uploaded,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Deps) Reset() {
+	*x = Deps{}
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Deps) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Deps) ProtoMessage() {}
+
+func (x *Deps) ProtoReflect() protoreflect.Message {
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Deps.ProtoReflect.Descriptor instead.
+func (*Deps) Descriptor() ([]byte, []int) {
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Deps) GetState() DepsState {
+	if x != nil {
+		return x.State
+	}
+	return DepsState_DEPS_STATE_UNSPECIFIED
+}
+
+func (x *Deps) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *Deps) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *Deps) GetSource() DepsSource {
+	if x != nil {
+		return x.Source
+	}
+	return DepsSource_DEPS_SOURCE_UNSPECIFIED
+}
+
+func (x *Deps) GetBytes() int64 {
+	if x != nil {
+		return x.Bytes
+	}
+	return 0
+}
+
+func (x *Deps) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *Deps) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *Deps) GetFinishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return nil
+}
+
+func (x *Deps) GetLockSha256() string {
+	if x != nil {
+		return x.LockSha256
+	}
+	return ""
+}
+
+func (x *Deps) GetUploaded() bool {
+	if x != nil {
+		return x.Uploaded
+	}
+	return false
+}
+
+// DepsUpload reports what a snapshot did with the dependency directory.
+type DepsUpload struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Key       string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	SizeBytes int64                  `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	Uploaded  bool                   `protobuf:"varint,3,opt,name=uploaded,proto3" json:"uploaded,omitempty"`
+	// Why nothing was uploaded, for example "cache hit" or "lockfile changed".
+	Skipped string `protobuf:"bytes,4,opt,name=skipped,proto3" json:"skipped,omitempty"`
+	// An upload failure. It never fails the snapshot.
+	Error         string `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DepsUpload) Reset() {
+	*x = DepsUpload{}
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DepsUpload) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DepsUpload) ProtoMessage() {}
+
+func (x *DepsUpload) ProtoReflect() protoreflect.Message {
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DepsUpload.ProtoReflect.Descriptor instead.
+func (*DepsUpload) Descriptor() ([]byte, []int) {
 	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *DepsUpload) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *DepsUpload) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *DepsUpload) GetUploaded() bool {
+	if x != nil {
+		return x.Uploaded
+	}
+	return false
+}
+
+func (x *DepsUpload) GetSkipped() string {
+	if x != nil {
+		return x.Skipped
+	}
+	return ""
+}
+
+func (x *DepsUpload) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
 }
 
 type IdentifyRequest struct {
@@ -254,7 +668,7 @@ type IdentifyRequest struct {
 
 func (x *IdentifyRequest) Reset() {
 	*x = IdentifyRequest{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[0]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -266,7 +680,7 @@ func (x *IdentifyRequest) String() string {
 func (*IdentifyRequest) ProtoMessage() {}
 
 func (x *IdentifyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[0]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -279,7 +693,7 @@ func (x *IdentifyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentifyRequest.ProtoReflect.Descriptor instead.
 func (*IdentifyRequest) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{0}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{4}
 }
 
 type IdentifyResponse struct {
@@ -294,7 +708,7 @@ type IdentifyResponse struct {
 
 func (x *IdentifyResponse) Reset() {
 	*x = IdentifyResponse{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[1]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -306,7 +720,7 @@ func (x *IdentifyResponse) String() string {
 func (*IdentifyResponse) ProtoMessage() {}
 
 func (x *IdentifyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[1]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -319,7 +733,7 @@ func (x *IdentifyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IdentifyResponse.ProtoReflect.Descriptor instead.
 func (*IdentifyResponse) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{1}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *IdentifyResponse) GetWorkspaceUid() string {
@@ -364,7 +778,7 @@ type StartSnapshotRequest struct {
 
 func (x *StartSnapshotRequest) Reset() {
 	*x = StartSnapshotRequest{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[2]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -376,7 +790,7 @@ func (x *StartSnapshotRequest) String() string {
 func (*StartSnapshotRequest) ProtoMessage() {}
 
 func (x *StartSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[2]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -389,7 +803,7 @@ func (x *StartSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*StartSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{2}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *StartSnapshotRequest) GetAttemptId() string {
@@ -429,7 +843,7 @@ type StartSnapshotResponse struct {
 
 func (x *StartSnapshotResponse) Reset() {
 	*x = StartSnapshotResponse{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[3]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -441,7 +855,7 @@ func (x *StartSnapshotResponse) String() string {
 func (*StartSnapshotResponse) ProtoMessage() {}
 
 func (x *StartSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[3]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -454,7 +868,7 @@ func (x *StartSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*StartSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{3}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *StartSnapshotResponse) GetSnapshot() *Snapshot {
@@ -473,7 +887,7 @@ type GetSnapshotRequest struct {
 
 func (x *GetSnapshotRequest) Reset() {
 	*x = GetSnapshotRequest{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[4]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -485,7 +899,7 @@ func (x *GetSnapshotRequest) String() string {
 func (*GetSnapshotRequest) ProtoMessage() {}
 
 func (x *GetSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[4]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -498,7 +912,7 @@ func (x *GetSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{4}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetSnapshotRequest) GetAttemptId() string {
@@ -517,7 +931,7 @@ type GetSnapshotResponse struct {
 
 func (x *GetSnapshotResponse) Reset() {
 	*x = GetSnapshotResponse{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[5]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -529,7 +943,7 @@ func (x *GetSnapshotResponse) String() string {
 func (*GetSnapshotResponse) ProtoMessage() {}
 
 func (x *GetSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[5]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -542,7 +956,7 @@ func (x *GetSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*GetSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{5}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetSnapshotResponse) GetSnapshot() *Snapshot {
@@ -572,14 +986,16 @@ type Snapshot struct {
 	StartedAt  *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	FinishedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
 	// Uncompressed size of the files new since the base.
-	NewBytes      int64 `protobuf:"varint,12,opt,name=new_bytes,json=newBytes,proto3" json:"new_bytes,omitempty"`
+	NewBytes int64 `protobuf:"varint,12,opt,name=new_bytes,json=newBytes,proto3" json:"new_bytes,omitempty"`
+	// The dependency cache upload that rode along, if any.
+	DepsUpload    *DepsUpload `protobuf:"bytes,13,opt,name=deps_upload,json=depsUpload,proto3" json:"deps_upload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Snapshot) Reset() {
 	*x = Snapshot{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[6]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -591,7 +1007,7 @@ func (x *Snapshot) String() string {
 func (*Snapshot) ProtoMessage() {}
 
 func (x *Snapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[6]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -604,7 +1020,7 @@ func (x *Snapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
 func (*Snapshot) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{6}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Snapshot) GetAttemptId() string {
@@ -691,6 +1107,13 @@ func (x *Snapshot) GetNewBytes() int64 {
 	return 0
 }
 
+func (x *Snapshot) GetDepsUpload() *DepsUpload {
+	if x != nil {
+		return x.DepsUpload
+	}
+	return nil
+}
+
 // SnapshotError explains a failed attempt. The workspace keeps running.
 type SnapshotError struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
@@ -704,7 +1127,7 @@ type SnapshotError struct {
 
 func (x *SnapshotError) Reset() {
 	*x = SnapshotError{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[7]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -716,7 +1139,7 @@ func (x *SnapshotError) String() string {
 func (*SnapshotError) ProtoMessage() {}
 
 func (x *SnapshotError) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[7]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -729,7 +1152,7 @@ func (x *SnapshotError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SnapshotError.ProtoReflect.Descriptor instead.
 func (*SnapshotError) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{7}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SnapshotError) GetCode() SnapshotErrorCode {
@@ -761,7 +1184,7 @@ type WatchProgressRequest struct {
 
 func (x *WatchProgressRequest) Reset() {
 	*x = WatchProgressRequest{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[8]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -773,7 +1196,7 @@ func (x *WatchProgressRequest) String() string {
 func (*WatchProgressRequest) ProtoMessage() {}
 
 func (x *WatchProgressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[8]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +1209,7 @@ func (x *WatchProgressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchProgressRequest.ProtoReflect.Descriptor instead.
 func (*WatchProgressRequest) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{8}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{12}
 }
 
 type WatchProgressResponse struct {
@@ -802,7 +1225,7 @@ type WatchProgressResponse struct {
 
 func (x *WatchProgressResponse) Reset() {
 	*x = WatchProgressResponse{}
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[9]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -814,7 +1237,7 @@ func (x *WatchProgressResponse) String() string {
 func (*WatchProgressResponse) ProtoMessage() {}
 
 func (x *WatchProgressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[9]
+	mi := &file_sbx_sidecar_v1_sidecar_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -827,7 +1250,7 @@ func (x *WatchProgressResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchProgressResponse.ProtoReflect.Descriptor instead.
 func (*WatchProgressResponse) Descriptor() ([]byte, []int) {
-	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{9}
+	return file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WatchProgressResponse) GetStage() Stage {
@@ -862,7 +1285,35 @@ var File_sbx_sidecar_v1_sidecar_proto protoreflect.FileDescriptor
 
 const file_sbx_sidecar_v1_sidecar_proto_rawDesc = "" +
 	"\n" +
-	"\x1csbx/sidecar/v1/sidecar.proto\x12\x0esbx.sidecar.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x11\n" +
+	"\x1csbx/sidecar/v1/sidecar.proto\x12\x0esbx.sidecar.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"C\n" +
+	"\x10StartDepsRequest\x12\x14\n" +
+	"\x05epoch\x18\x01 \x01(\x03R\x05epoch\x12\x19\n" +
+	"\bimage_id\x18\x02 \x01(\tR\aimageId\"=\n" +
+	"\x11StartDepsResponse\x12(\n" +
+	"\x04deps\x18\x01 \x01(\v2\x14.sbx.sidecar.v1.DepsR\x04deps\"\xfc\x02\n" +
+	"\x04Deps\x12/\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x19.sbx.sidecar.v1.DepsStateR\x05state\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\x12\x10\n" +
+	"\x03key\x18\x03 \x01(\tR\x03key\x122\n" +
+	"\x06source\x18\x04 \x01(\x0e2\x1a.sbx.sidecar.v1.DepsSourceR\x06source\x12\x14\n" +
+	"\x05bytes\x18\x05 \x01(\x03R\x05bytes\x12\x18\n" +
+	"\amessage\x18\x06 \x01(\tR\amessage\x129\n" +
+	"\n" +
+	"started_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
+	"\vfinished_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishedAt\x12\x1f\n" +
+	"\vlock_sha256\x18\t \x01(\tR\n" +
+	"lockSha256\x12\x1a\n" +
+	"\buploaded\x18\n" +
+	" \x01(\bR\buploaded\"\x89\x01\n" +
+	"\n" +
+	"DepsUpload\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\x12\x1a\n" +
+	"\buploaded\x18\x03 \x01(\bR\buploaded\x12\x18\n" +
+	"\askipped\x18\x04 \x01(\tR\askipped\x12\x14\n" +
+	"\x05error\x18\x05 \x01(\tR\x05error\"\x11\n" +
 	"\x0fIdentifyRequest\"\xa6\x01\n" +
 	"\x10IdentifyResponse\x12#\n" +
 	"\rworkspace_uid\x18\x01 \x01(\tR\fworkspaceUid\x12\x14\n" +
@@ -882,7 +1333,7 @@ const file_sbx_sidecar_v1_sidecar_proto_rawDesc = "" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\"K\n" +
 	"\x13GetSnapshotResponse\x124\n" +
-	"\bsnapshot\x18\x01 \x01(\v2\x18.sbx.sidecar.v1.SnapshotR\bsnapshot\"\xc8\x03\n" +
+	"\bsnapshot\x18\x01 \x01(\v2\x18.sbx.sidecar.v1.SnapshotR\bsnapshot\"\x85\x04\n" +
 	"\bSnapshot\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x123\n" +
@@ -901,7 +1352,9 @@ const file_sbx_sidecar_v1_sidecar_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
 	"\vfinished_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"finishedAt\x12\x1b\n" +
-	"\tnew_bytes\x18\f \x01(\x03R\bnewBytes\"v\n" +
+	"\tnew_bytes\x18\f \x01(\x03R\bnewBytes\x12;\n" +
+	"\vdeps_upload\x18\r \x01(\v2\x1a.sbx.sidecar.v1.DepsUploadR\n" +
+	"depsUpload\"v\n" +
 	"\rSnapshotError\x125\n" +
 	"\x04code\x18\x01 \x01(\x0e2!.sbx.sidecar.v1.SnapshotErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +
@@ -911,7 +1364,20 @@ const file_sbx_sidecar_v1_sidecar_proto_rawDesc = "" +
 	"\x05stage\x18\x01 \x01(\x0e2\x15.sbx.sidecar.v1.StageR\x05stage\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x16\n" +
 	"\x06detail\x18\x03 \x01(\tR\x06detail\x12\x14\n" +
-	"\x05bytes\x18\x04 \x01(\x03R\x05bytes*^\n" +
+	"\x05bytes\x18\x04 \x01(\x03R\x05bytes*\x89\x01\n" +
+	"\tDepsState\x12\x1a\n" +
+	"\x16DEPS_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14DEPS_STATE_RESTORING\x10\x01\x12\x19\n" +
+	"\x15DEPS_STATE_INSTALLING\x10\x02\x12\x14\n" +
+	"\x10DEPS_STATE_READY\x10\x03\x12\x15\n" +
+	"\x11DEPS_STATE_FAILED\x10\x04*\x88\x01\n" +
+	"\n" +
+	"DepsSource\x12\x1b\n" +
+	"\x17DEPS_SOURCE_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10DEPS_SOURCE_NONE\x10\x01\x12\x17\n" +
+	"\x13DEPS_SOURCE_PRESENT\x10\x02\x12\x15\n" +
+	"\x11DEPS_SOURCE_CACHE\x10\x03\x12\x17\n" +
+	"\x13DEPS_SOURCE_INSTALL\x10\x04*^\n" +
 	"\vVolumeState\x12\x1c\n" +
 	"\x18VOLUME_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16VOLUME_STATE_RESTORING\x10\x01\x12\x15\n" +
@@ -932,12 +1398,13 @@ const file_sbx_sidecar_v1_sidecar_proto_rawDesc = "" +
 	"\x11STAGE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11STAGE_FILES_READY\x10\x01\x12\x14\n" +
 	"\x10STAGE_DEPS_READY\x10\x02\x12\x15\n" +
-	"\x11STAGE_DEPS_FAILED\x10\x032\xf5\x02\n" +
+	"\x11STAGE_DEPS_FAILED\x10\x032\xc7\x03\n" +
 	"\x0eSidecarService\x12M\n" +
 	"\bIdentify\x12\x1f.sbx.sidecar.v1.IdentifyRequest\x1a .sbx.sidecar.v1.IdentifyResponse\x12\\\n" +
 	"\rStartSnapshot\x12$.sbx.sidecar.v1.StartSnapshotRequest\x1a%.sbx.sidecar.v1.StartSnapshotResponse\x12V\n" +
 	"\vGetSnapshot\x12\".sbx.sidecar.v1.GetSnapshotRequest\x1a#.sbx.sidecar.v1.GetSnapshotResponse\x12^\n" +
-	"\rWatchProgress\x12$.sbx.sidecar.v1.WatchProgressRequest\x1a%.sbx.sidecar.v1.WatchProgressResponse0\x01BKZIgithub.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1;sidecarv1b\x06proto3"
+	"\rWatchProgress\x12$.sbx.sidecar.v1.WatchProgressRequest\x1a%.sbx.sidecar.v1.WatchProgressResponse0\x01\x12P\n" +
+	"\tStartDeps\x12 .sbx.sidecar.v1.StartDepsRequest\x1a!.sbx.sidecar.v1.StartDepsResponseBKZIgithub.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1;sidecarv1b\x06proto3"
 
 var (
 	file_sbx_sidecar_v1_sidecar_proto_rawDescOnce sync.Once
@@ -951,50 +1418,64 @@ func file_sbx_sidecar_v1_sidecar_proto_rawDescGZIP() []byte {
 	return file_sbx_sidecar_v1_sidecar_proto_rawDescData
 }
 
-var file_sbx_sidecar_v1_sidecar_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_sbx_sidecar_v1_sidecar_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_sbx_sidecar_v1_sidecar_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_sbx_sidecar_v1_sidecar_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_sbx_sidecar_v1_sidecar_proto_goTypes = []any{
-	(VolumeState)(0),              // 0: sbx.sidecar.v1.VolumeState
-	(SnapshotState)(0),            // 1: sbx.sidecar.v1.SnapshotState
-	(SnapshotErrorCode)(0),        // 2: sbx.sidecar.v1.SnapshotErrorCode
-	(Stage)(0),                    // 3: sbx.sidecar.v1.Stage
-	(*IdentifyRequest)(nil),       // 4: sbx.sidecar.v1.IdentifyRequest
-	(*IdentifyResponse)(nil),      // 5: sbx.sidecar.v1.IdentifyResponse
-	(*StartSnapshotRequest)(nil),  // 6: sbx.sidecar.v1.StartSnapshotRequest
-	(*StartSnapshotResponse)(nil), // 7: sbx.sidecar.v1.StartSnapshotResponse
-	(*GetSnapshotRequest)(nil),    // 8: sbx.sidecar.v1.GetSnapshotRequest
-	(*GetSnapshotResponse)(nil),   // 9: sbx.sidecar.v1.GetSnapshotResponse
-	(*Snapshot)(nil),              // 10: sbx.sidecar.v1.Snapshot
-	(*SnapshotError)(nil),         // 11: sbx.sidecar.v1.SnapshotError
-	(*WatchProgressRequest)(nil),  // 12: sbx.sidecar.v1.WatchProgressRequest
-	(*WatchProgressResponse)(nil), // 13: sbx.sidecar.v1.WatchProgressResponse
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
+	(DepsState)(0),                // 0: sbx.sidecar.v1.DepsState
+	(DepsSource)(0),               // 1: sbx.sidecar.v1.DepsSource
+	(VolumeState)(0),              // 2: sbx.sidecar.v1.VolumeState
+	(SnapshotState)(0),            // 3: sbx.sidecar.v1.SnapshotState
+	(SnapshotErrorCode)(0),        // 4: sbx.sidecar.v1.SnapshotErrorCode
+	(Stage)(0),                    // 5: sbx.sidecar.v1.Stage
+	(*StartDepsRequest)(nil),      // 6: sbx.sidecar.v1.StartDepsRequest
+	(*StartDepsResponse)(nil),     // 7: sbx.sidecar.v1.StartDepsResponse
+	(*Deps)(nil),                  // 8: sbx.sidecar.v1.Deps
+	(*DepsUpload)(nil),            // 9: sbx.sidecar.v1.DepsUpload
+	(*IdentifyRequest)(nil),       // 10: sbx.sidecar.v1.IdentifyRequest
+	(*IdentifyResponse)(nil),      // 11: sbx.sidecar.v1.IdentifyResponse
+	(*StartSnapshotRequest)(nil),  // 12: sbx.sidecar.v1.StartSnapshotRequest
+	(*StartSnapshotResponse)(nil), // 13: sbx.sidecar.v1.StartSnapshotResponse
+	(*GetSnapshotRequest)(nil),    // 14: sbx.sidecar.v1.GetSnapshotRequest
+	(*GetSnapshotResponse)(nil),   // 15: sbx.sidecar.v1.GetSnapshotResponse
+	(*Snapshot)(nil),              // 16: sbx.sidecar.v1.Snapshot
+	(*SnapshotError)(nil),         // 17: sbx.sidecar.v1.SnapshotError
+	(*WatchProgressRequest)(nil),  // 18: sbx.sidecar.v1.WatchProgressRequest
+	(*WatchProgressResponse)(nil), // 19: sbx.sidecar.v1.WatchProgressResponse
+	(*timestamppb.Timestamp)(nil), // 20: google.protobuf.Timestamp
 }
 var file_sbx_sidecar_v1_sidecar_proto_depIdxs = []int32{
-	0,  // 0: sbx.sidecar.v1.IdentifyResponse.volume_state:type_name -> sbx.sidecar.v1.VolumeState
-	14, // 1: sbx.sidecar.v1.StartSnapshotRequest.freeze_time:type_name -> google.protobuf.Timestamp
-	10, // 2: sbx.sidecar.v1.StartSnapshotResponse.snapshot:type_name -> sbx.sidecar.v1.Snapshot
-	10, // 3: sbx.sidecar.v1.GetSnapshotResponse.snapshot:type_name -> sbx.sidecar.v1.Snapshot
-	1,  // 4: sbx.sidecar.v1.Snapshot.state:type_name -> sbx.sidecar.v1.SnapshotState
-	11, // 5: sbx.sidecar.v1.Snapshot.error:type_name -> sbx.sidecar.v1.SnapshotError
-	14, // 6: sbx.sidecar.v1.Snapshot.started_at:type_name -> google.protobuf.Timestamp
-	14, // 7: sbx.sidecar.v1.Snapshot.finished_at:type_name -> google.protobuf.Timestamp
-	2,  // 8: sbx.sidecar.v1.SnapshotError.code:type_name -> sbx.sidecar.v1.SnapshotErrorCode
-	3,  // 9: sbx.sidecar.v1.WatchProgressResponse.stage:type_name -> sbx.sidecar.v1.Stage
-	14, // 10: sbx.sidecar.v1.WatchProgressResponse.at:type_name -> google.protobuf.Timestamp
-	4,  // 11: sbx.sidecar.v1.SidecarService.Identify:input_type -> sbx.sidecar.v1.IdentifyRequest
-	6,  // 12: sbx.sidecar.v1.SidecarService.StartSnapshot:input_type -> sbx.sidecar.v1.StartSnapshotRequest
-	8,  // 13: sbx.sidecar.v1.SidecarService.GetSnapshot:input_type -> sbx.sidecar.v1.GetSnapshotRequest
-	12, // 14: sbx.sidecar.v1.SidecarService.WatchProgress:input_type -> sbx.sidecar.v1.WatchProgressRequest
-	5,  // 15: sbx.sidecar.v1.SidecarService.Identify:output_type -> sbx.sidecar.v1.IdentifyResponse
-	7,  // 16: sbx.sidecar.v1.SidecarService.StartSnapshot:output_type -> sbx.sidecar.v1.StartSnapshotResponse
-	9,  // 17: sbx.sidecar.v1.SidecarService.GetSnapshot:output_type -> sbx.sidecar.v1.GetSnapshotResponse
-	13, // 18: sbx.sidecar.v1.SidecarService.WatchProgress:output_type -> sbx.sidecar.v1.WatchProgressResponse
-	15, // [15:19] is the sub-list for method output_type
-	11, // [11:15] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	8,  // 0: sbx.sidecar.v1.StartDepsResponse.deps:type_name -> sbx.sidecar.v1.Deps
+	0,  // 1: sbx.sidecar.v1.Deps.state:type_name -> sbx.sidecar.v1.DepsState
+	1,  // 2: sbx.sidecar.v1.Deps.source:type_name -> sbx.sidecar.v1.DepsSource
+	20, // 3: sbx.sidecar.v1.Deps.started_at:type_name -> google.protobuf.Timestamp
+	20, // 4: sbx.sidecar.v1.Deps.finished_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: sbx.sidecar.v1.IdentifyResponse.volume_state:type_name -> sbx.sidecar.v1.VolumeState
+	20, // 6: sbx.sidecar.v1.StartSnapshotRequest.freeze_time:type_name -> google.protobuf.Timestamp
+	16, // 7: sbx.sidecar.v1.StartSnapshotResponse.snapshot:type_name -> sbx.sidecar.v1.Snapshot
+	16, // 8: sbx.sidecar.v1.GetSnapshotResponse.snapshot:type_name -> sbx.sidecar.v1.Snapshot
+	3,  // 9: sbx.sidecar.v1.Snapshot.state:type_name -> sbx.sidecar.v1.SnapshotState
+	17, // 10: sbx.sidecar.v1.Snapshot.error:type_name -> sbx.sidecar.v1.SnapshotError
+	20, // 11: sbx.sidecar.v1.Snapshot.started_at:type_name -> google.protobuf.Timestamp
+	20, // 12: sbx.sidecar.v1.Snapshot.finished_at:type_name -> google.protobuf.Timestamp
+	9,  // 13: sbx.sidecar.v1.Snapshot.deps_upload:type_name -> sbx.sidecar.v1.DepsUpload
+	4,  // 14: sbx.sidecar.v1.SnapshotError.code:type_name -> sbx.sidecar.v1.SnapshotErrorCode
+	5,  // 15: sbx.sidecar.v1.WatchProgressResponse.stage:type_name -> sbx.sidecar.v1.Stage
+	20, // 16: sbx.sidecar.v1.WatchProgressResponse.at:type_name -> google.protobuf.Timestamp
+	10, // 17: sbx.sidecar.v1.SidecarService.Identify:input_type -> sbx.sidecar.v1.IdentifyRequest
+	12, // 18: sbx.sidecar.v1.SidecarService.StartSnapshot:input_type -> sbx.sidecar.v1.StartSnapshotRequest
+	14, // 19: sbx.sidecar.v1.SidecarService.GetSnapshot:input_type -> sbx.sidecar.v1.GetSnapshotRequest
+	18, // 20: sbx.sidecar.v1.SidecarService.WatchProgress:input_type -> sbx.sidecar.v1.WatchProgressRequest
+	6,  // 21: sbx.sidecar.v1.SidecarService.StartDeps:input_type -> sbx.sidecar.v1.StartDepsRequest
+	11, // 22: sbx.sidecar.v1.SidecarService.Identify:output_type -> sbx.sidecar.v1.IdentifyResponse
+	13, // 23: sbx.sidecar.v1.SidecarService.StartSnapshot:output_type -> sbx.sidecar.v1.StartSnapshotResponse
+	15, // 24: sbx.sidecar.v1.SidecarService.GetSnapshot:output_type -> sbx.sidecar.v1.GetSnapshotResponse
+	19, // 25: sbx.sidecar.v1.SidecarService.WatchProgress:output_type -> sbx.sidecar.v1.WatchProgressResponse
+	7,  // 26: sbx.sidecar.v1.SidecarService.StartDeps:output_type -> sbx.sidecar.v1.StartDepsResponse
+	22, // [22:27] is the sub-list for method output_type
+	17, // [17:22] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_sbx_sidecar_v1_sidecar_proto_init() }
@@ -1007,8 +1488,8 @@ func file_sbx_sidecar_v1_sidecar_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sbx_sidecar_v1_sidecar_proto_rawDesc), len(file_sbx_sidecar_v1_sidecar_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   10,
+			NumEnums:      6,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

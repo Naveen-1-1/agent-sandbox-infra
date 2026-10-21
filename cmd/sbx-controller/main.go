@@ -77,6 +77,7 @@ func main() {
 	flag.BoolVar(&o.s3.PathStyle, "s3-path-style", envBool("SBX_S3_PATH_STYLE", false), "use path-style S3 URLs")
 	flag.BoolVar(&o.createBucket, "s3-create-bucket", envBool("SBX_S3_CREATE_BUCKET", false), "create the bucket at startup if missing")
 	flag.Int64Var(&o.maxBundleBytes, "max-bundle-bytes", 500<<20, "largest snapshot bundle accepted")
+	flag.Int64Var(&o.ws.Snapshot.MaxDepsBytes, "max-deps-bytes", envInt("SBX_MAX_DEPS_BYTES", 2<<30), "largest dependency archive cached")
 	flag.DurationVar(&o.presignTTL, "presign-ttl", 15*time.Minute, "lifetime of presigned URLs")
 
 	flag.StringVar(&o.ws.RuntimeImage, "runtime-image", os.Getenv("SBX_RUNTIME_IMAGE"), "sbx-runtime image for workspace pods")
@@ -221,7 +222,7 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 
 	b := broker.New(broker.Config{
 		Keyring: keys, Store: store, Workspaces: broker.KubeWorkspaces{Reader: mgr.GetAPIReader()},
-		PresignTTL: o.presignTTL, MaxBundleBytes: o.maxBundleBytes,
+		PresignTTL: o.presignTTL, MaxBundleBytes: o.maxBundleBytes, MaxDepsBytes: o.ws.Snapshot.MaxDepsBytes,
 	})
 	if err := mgr.Add(&brokerServer{addr: o.brokerAddr, b: b, log: log}); err != nil {
 		return err

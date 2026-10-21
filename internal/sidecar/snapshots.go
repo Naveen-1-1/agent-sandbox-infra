@@ -28,6 +28,7 @@ var validAttempt = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 type Snapshotter struct {
 	cfg    Config
 	broker brokerv1.BrokerServiceClient
+	deps   *Deps // caches freshly installed dependencies; may be nil
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -38,12 +39,14 @@ type Snapshotter struct {
 	ops map[string]*sidecarv1.Snapshot
 }
 
-// NewSnapshotter returns a Snapshotter; call Close to stop running attempts.
-func NewSnapshotter(cfg Config, broker brokerv1.BrokerServiceClient) *Snapshotter {
+// NewSnapshotter returns a Snapshotter; call Close to stop running
+// attempts. deps, if set, uploads a fresh dependency install with each
+// snapshot.
+func NewSnapshotter(cfg Config, broker brokerv1.BrokerServiceClient, deps *Deps) *Snapshotter {
 	cfg.defaults()
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Snapshotter{
-		cfg: cfg, broker: broker, ctx: ctx, cancel: cancel,
+		cfg: cfg, broker: broker, deps: deps, ctx: ctx, cancel: cancel,
 		slot: make(chan struct{}, 1), ops: map[string]*sidecarv1.Snapshot{},
 	}
 }
@@ -155,9 +158,14 @@ func (s *Snapshotter) run(id, base string, freeze time.Time) {
 		}
 	}
 	key := u.GetKey()
+	var du *sidecarv1.DepsUpload
+	if s.deps != nil {
+		// Still frozen, so the directory can't change under the archive.
+		du = s.deps.Upload(s.ctx)
+	}
 	s.finish(id, &sidecarv1.Snapshot{
 		WipSha: res.WIP, IndexSha: res.Index, Head: res.Head,
-		BundleKey: key, Sha256: res.SHA256, SizeBytes: res.Size, NewBytes: res.NewBytes,
+		BundleKey: key, Sha256: res.SHA256, SizeBytes: res.Size, NewBytes: res.NewBytes, DepsUpload: du,
 	}, nil)
 }
 

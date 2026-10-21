@@ -23,6 +23,7 @@ const (
 	SidecarService_StartSnapshot_FullMethodName = "/sbx.sidecar.v1.SidecarService/StartSnapshot"
 	SidecarService_GetSnapshot_FullMethodName   = "/sbx.sidecar.v1.SidecarService/GetSnapshot"
 	SidecarService_WatchProgress_FullMethodName = "/sbx.sidecar.v1.SidecarService/WatchProgress"
+	SidecarService_StartDeps_FullMethodName     = "/sbx.sidecar.v1.SidecarService/StartDeps"
 )
 
 // SidecarServiceClient is the client API for SidecarService service.
@@ -42,6 +43,10 @@ type SidecarServiceClient interface {
 	// WatchProgress streams restore milestones for the wake timeline. Stages
 	// already reached are sent first.
 	WatchProgress(ctx context.Context, in *WatchProgressRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchProgressResponse], error)
+	// StartDeps starts restoring this epoch's dependency directory, from the
+	// shared cache or by installing it, or reports the restore already
+	// started. The workload keeps running meanwhile.
+	StartDeps(ctx context.Context, in *StartDepsRequest, opts ...grpc.CallOption) (*StartDepsResponse, error)
 }
 
 type sidecarServiceClient struct {
@@ -101,6 +106,16 @@ func (c *sidecarServiceClient) WatchProgress(ctx context.Context, in *WatchProgr
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type SidecarService_WatchProgressClient = grpc.ServerStreamingClient[WatchProgressResponse]
 
+func (c *sidecarServiceClient) StartDeps(ctx context.Context, in *StartDepsRequest, opts ...grpc.CallOption) (*StartDepsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartDepsResponse)
+	err := c.cc.Invoke(ctx, SidecarService_StartDeps_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SidecarServiceServer is the server API for SidecarService service.
 // All implementations must embed UnimplementedSidecarServiceServer
 // for forward compatibility.
@@ -118,6 +133,10 @@ type SidecarServiceServer interface {
 	// WatchProgress streams restore milestones for the wake timeline. Stages
 	// already reached are sent first.
 	WatchProgress(*WatchProgressRequest, grpc.ServerStreamingServer[WatchProgressResponse]) error
+	// StartDeps starts restoring this epoch's dependency directory, from the
+	// shared cache or by installing it, or reports the restore already
+	// started. The workload keeps running meanwhile.
+	StartDeps(context.Context, *StartDepsRequest) (*StartDepsResponse, error)
 	mustEmbedUnimplementedSidecarServiceServer()
 }
 
@@ -139,6 +158,9 @@ func (UnimplementedSidecarServiceServer) GetSnapshot(context.Context, *GetSnapsh
 }
 func (UnimplementedSidecarServiceServer) WatchProgress(*WatchProgressRequest, grpc.ServerStreamingServer[WatchProgressResponse]) error {
 	return status.Error(codes.Unimplemented, "method WatchProgress not implemented")
+}
+func (UnimplementedSidecarServiceServer) StartDeps(context.Context, *StartDepsRequest) (*StartDepsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartDeps not implemented")
 }
 func (UnimplementedSidecarServiceServer) mustEmbedUnimplementedSidecarServiceServer() {}
 func (UnimplementedSidecarServiceServer) testEmbeddedByValue()                        {}
@@ -226,6 +248,24 @@ func _SidecarService_WatchProgress_Handler(srv interface{}, stream grpc.ServerSt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type SidecarService_WatchProgressServer = grpc.ServerStreamingServer[WatchProgressResponse]
 
+func _SidecarService_StartDeps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartDepsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SidecarServiceServer).StartDeps(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SidecarService_StartDeps_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SidecarServiceServer).StartDeps(ctx, req.(*StartDepsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SidecarService_ServiceDesc is the grpc.ServiceDesc for SidecarService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -244,6 +284,10 @@ var SidecarService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSnapshot",
 			Handler:    _SidecarService_GetSnapshot_Handler,
+		},
+		{
+			MethodName: "StartDeps",
+			Handler:    _SidecarService_StartDeps_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

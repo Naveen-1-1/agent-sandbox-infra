@@ -51,6 +51,8 @@ const (
 	// Keys of the per-epoch token Secret.
 	SecretKeyBroker  = "broker-token"  //nolint:gosec // a Secret key name, not a credential
 	SecretKeySidecar = "sidecar-token" //nolint:gosec // a Secret key name, not a credential
+	// The sidecar runs dependency installs through the agent with it.
+	SecretKeyAgent = "agent-token" //nolint:gosec // a Secret key name, not a credential
 
 	LabelWorkspace = "sbx.dev/workspace"
 	LabelEpoch     = "sbx.dev/epoch"
@@ -62,6 +64,8 @@ type Snapshot struct {
 	MaxFileBytes   int64
 	MaxNewBytes    int64
 	MaxBundleBytes int64
+	// MaxDepsBytes is the largest dependency archive uploaded to the cache.
+	MaxDepsBytes int64
 }
 
 // Input is everything one epoch's pod depends on.
@@ -121,6 +125,8 @@ func Build(in Input) (sbv1.PodTemplate, error) {
 		corev1.EnvVar{Name: "SBX_SNAPSHOT_MAX_FILE_BYTES", Value: strconv.FormatInt(in.Snapshot.MaxFileBytes, 10)},
 		corev1.EnvVar{Name: "SBX_SNAPSHOT_MAX_NEW_BYTES", Value: strconv.FormatInt(in.Snapshot.MaxNewBytes, 10)},
 		corev1.EnvVar{Name: "SBX_SNAPSHOT_MAX_BUNDLE_BYTES", Value: strconv.FormatInt(in.Snapshot.MaxBundleBytes, 10)},
+		corev1.EnvVar{Name: "SBX_DEPS_MAX_BYTES", Value: strconv.FormatInt(in.Snapshot.MaxDepsBytes, 10)},
+		corev1.EnvVar{Name: "SBX_AGENT_ADDR", Value: fmt.Sprintf("127.0.0.1:%d", AgentGRPCPort)},
 	)
 	small := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
@@ -212,6 +218,7 @@ func Build(in Input) (sbv1.PodTemplate, error) {
 				Items: []corev1.KeyToPath{
 					{Key: SecretKeyBroker, Path: SecretKeyBroker},
 					{Key: SecretKeySidecar, Path: SecretKeySidecar},
+					{Key: SecretKeyAgent, Path: SecretKeyAgent},
 				},
 			}}},
 		},

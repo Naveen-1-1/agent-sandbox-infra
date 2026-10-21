@@ -278,6 +278,7 @@ func (r *Reconciler) ensureSecret(ctx context.Context, ws *sbxv1.Workspace, epoc
 		StringData: map[string]string{
 			podspec.SecretKeyBroker:  r.Keys.Derive(token.Broker, uid, epoch),
 			podspec.SecretKeySidecar: r.Keys.Derive(token.Sidecar, uid, epoch),
+			podspec.SecretKeyAgent:   r.Keys.Derive(token.Agent, uid, epoch),
 		},
 	}
 	if err := controllerutil.SetControllerReference(ws, s, r.Scheme); err != nil {
