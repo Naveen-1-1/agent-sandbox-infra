@@ -30,4 +30,5 @@ if kubectl -n "$ns" get service sbx-s3 >/dev/null 2>&1; then
   args+=(--s3-endpoint http://127.0.0.1:18333)
 fi
 
-bin/sbx-bench --config "$config" --namespace "$ns" --platform-commit "$(git rev-parse --short HEAD)" "${args[@]}" "$@"
+# ${args[@]+...}: bash 3.2 (macOS) calls an empty array unset under set -u.
+bin/sbx-bench --config "$config" --namespace "$ns" --platform-commit "$(git rev-parse --short HEAD)" ${args[@]+"${args[@]}"} "$@"
