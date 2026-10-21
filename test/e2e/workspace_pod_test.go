@@ -65,10 +65,7 @@ func epochResources(t *testing.T, c *framework.Clients, p framework.Platform, ws
 	uid := string(ws.UID)
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ws.Namespace, Name: fmt.Sprintf("%s-e%d-tokens", ws.Name, epoch)},
-		StringData: map[string]string{
-			podspec.SecretKeyBroker:  p.Keyring.Derive(token.Broker, uid, epoch),
-			podspec.SecretKeySidecar: p.Keyring.Derive(token.Sidecar, uid, epoch),
-		},
+		StringData: podspec.Tokens(p.Keyring, uid, epoch),
 	}
 	if err := c.CR.Create(ctx, secret); err != nil {
 		t.Fatal(err)

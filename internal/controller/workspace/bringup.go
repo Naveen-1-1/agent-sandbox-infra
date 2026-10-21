@@ -272,15 +272,10 @@ func (r *Reconciler) ensureSecret(ctx context.Context, ws *sbxv1.Workspace, epoc
 	if err == nil || !apierrors.IsNotFound(err) {
 		return err
 	}
-	uid := string(ws.UID)
 	s := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ws.Namespace, Name: secretName(ws, epoch), Labels: r.labels(ws, epoch)},
 		Type:       corev1.SecretTypeOpaque,
-		StringData: map[string]string{
-			podspec.SecretKeyBroker:  r.Keys.Derive(token.Broker, uid, epoch),
-			podspec.SecretKeySidecar: r.Keys.Derive(token.Sidecar, uid, epoch),
-			podspec.SecretKeyAgent:   r.Keys.Derive(token.Agent, uid, epoch),
-		},
+		StringData: podspec.Tokens(r.Keys, string(ws.UID), epoch),
 	}
 	if err := controllerutil.SetControllerReference(ws, s, r.Scheme); err != nil {
 		return err

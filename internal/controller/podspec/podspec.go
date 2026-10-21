@@ -25,6 +25,7 @@ import (
 	sbv1 "sigs.k8s.io/agent-sandbox/api/v1beta1"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/token"
 )
 
 // Paths, ports and names inside a workspace pod.
@@ -57,6 +58,16 @@ const (
 	LabelWorkspace = "sbx.dev/workspace"
 	LabelEpoch     = "sbx.dev/epoch"
 )
+
+// Tokens is the data of an epoch's token Secret: every token the pod's
+// own containers present.
+func Tokens(keys token.Keyring, workspaceUID string, epoch int64) map[string]string {
+	return map[string]string{
+		SecretKeyBroker:  keys.Derive(token.Broker, workspaceUID, epoch),
+		SecretKeySidecar: keys.Derive(token.Sidecar, workspaceUID, epoch),
+		SecretKeyAgent:   keys.Derive(token.Agent, workspaceUID, epoch),
+	}
+}
 
 // Snapshot limits and exclusions passed to the sidecar.
 type Snapshot struct {
