@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/objstore"
@@ -83,13 +84,26 @@ const (
 	KindDeps      = "deps"      // deps/: dependency archives
 )
 
+// prefixes are where each kind lives.
+var prefixes = map[string]string{KindSnapshots: "ws/", KindBases: "bases/", KindDeps: "deps/"}
+
+// KindOf is the kind of the object at key, or "other".
+func KindOf(key string) string {
+	for kind, prefix := range prefixes {
+		if strings.HasPrefix(key, prefix) {
+			return kind
+		}
+	}
+	return "other"
+}
+
 // Usage is how much is stored of one kind.
 type Usage struct{ Bytes, Objects int64 }
 
 // Usage lists the store and adds up what each kind takes.
 func (s *Store) Usage(ctx context.Context) (map[string]Usage, error) {
 	out := map[string]Usage{}
-	for kind, prefix := range map[string]string{KindSnapshots: "ws/", KindBases: "bases/", KindDeps: "deps/"} {
+	for kind, prefix := range prefixes {
 		objs, err := s.obj.List(ctx, prefix)
 		if err != nil {
 			return nil, err

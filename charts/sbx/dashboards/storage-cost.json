@@ -677,6 +677,64 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "S3 requests",
+      "description": "Requests per second to object storage: the controller's own (by operation, without the periodic usage listing) and the ones pods make with presigned URLs (by operation and kind).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (op) (rate(sbx_object_store_requests_total{caller!=\"usage\"}[$__rate_interval]))",
+          "legendFormat": "controller {{op}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (op, kind) (rate(sbx_object_store_delegated_requests_total[$__rate_interval]))",
+          "legendFormat": "pods {{op}} {{kind}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ]
 }

@@ -32,10 +32,25 @@ func TestSnapshotMetrics(t *testing.T) {
 	}
 }
 
+func TestObjectStoreMetrics(t *testing.T) {
+	m := metrics.NewObjectStore(prometheus.NewRegistry())
+	m.Requests.WithLabelValues("broker", "head").Inc()
+	m.Delegated.WithLabelValues("put", "deps").Add(2)
+	if got := testutil.ToFloat64(m.Requests.WithLabelValues("broker", "head")); got != 1 {
+		t.Errorf("broker heads = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.Delegated.WithLabelValues("put", "deps")); got != 2 {
+		t.Errorf("delegated deps puts = %v, want 2", got)
+	}
+}
+
 // TestNamingConvention keeps every metric in the sbx_ namespace with help text.
 func TestNamingConvention(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	metrics.NewSnapshot(reg)
+	st := metrics.NewObjectStore(reg)
+	st.Requests.WithLabelValues("controller", "get").Inc()
+	st.Delegated.WithLabelValues("get", "snapshots").Inc()
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)

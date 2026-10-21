@@ -216,14 +216,16 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		}
 		return s, nil
 	})
-	if err := mgr.Add(&usagePoller{store: snapstore.New(store), m: metrics.NewStorage(ctrlmetrics.Registry),
+	requests := metrics.NewObjectStore(ctrlmetrics.Registry)
+	counted := func(caller string) objstore.Store { return countedStore(store, caller, requests) }
+	if err := mgr.Add(&usagePoller{store: snapstore.New(counted("usage")), m: metrics.NewStorage(ctrlmetrics.Registry),
 		prices: o.prices, every: o.usageEvery, log: log}); err != nil {
 		return err
 	}
 	limiter := &ops.Limiter{Max: o.opsMax, MinSuspend: o.opsMinSuspend}
 	r := &workspace.Reconciler{
 		Client: mgr.GetClient(), API: mgr.GetAPIReader(), Scheme: scheme, Keys: keys,
-		Store: snapstore.New(store), Objects: store, Pods: workspace.GRPCPods{Keys: keys},
+		Store: snapstore.New(counted("controller")), Objects: counted("controller"), Pods: workspace.GRPCPods{Keys: keys},
 		Inspector: workspace.GitInspector{AllowPrivateHosts: o.allowPrivateRepos},
 		Metrics:   wsMetrics, Snapshots: metrics.NewSnapshot(ctrlmetrics.Registry),
 		Config:   o.ws,
@@ -256,7 +258,7 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 	}
 
 	b := broker.New(broker.Config{
-		Keyring: keys, Store: store, Workspaces: broker.KubeWorkspaces{Reader: mgr.GetAPIReader()},
+		Keyring: keys, Store: counted("broker"), Workspaces: broker.KubeWorkspaces{Reader: mgr.GetAPIReader()},
 		PresignTTL: o.presignTTL, MaxBundleBytes: o.maxBundleBytes, MaxDepsBytes: o.ws.Snapshot.MaxDepsBytes,
 	})
 	if err := mgr.Add(&brokerServer{addr: o.brokerAddr, b: b, log: log}); err != nil {
@@ -264,6 +266,21 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 	}
 	log.Info("starting", "broker", o.brokerAddr, "bucket", o.s3.Bucket, "runtimeImage", o.ws.RuntimeImage)
 	return mgr.Start(ctx)
+}
+
+// countedStore counts caller's requests to s. A presigned URL counts as a
+// request delegated to the pod that will use it.
+func countedStore(s objstore.Store, caller string, m *metrics.ObjectStore) objstore.Store {
+	return objstore.Observed(s, func(op objstore.Op, key string) {
+		switch op {
+		case objstore.OpPresignPut:
+			m.Delegated.WithLabelValues("put", snapstore.KindOf(key)).Inc()
+		case objstore.OpPresignGet:
+			m.Delegated.WithLabelValues("get", snapstore.KindOf(key)).Inc()
+		default:
+			m.Requests.WithLabelValues(caller, string(op)).Inc()
+		}
+	})
 }
 
 // usagePoller lists object storage now and then for the storage gauges.

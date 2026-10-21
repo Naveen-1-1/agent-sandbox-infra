@@ -155,6 +155,16 @@ func TestKeys(t *testing.T) {
 	if a == b {
 		t.Error("different repositories share a base bundle key")
 	}
+	for key, kind := range map[string]string{
+		snapstore.BundleKey("u1", "abc"): snapstore.KindSnapshots,
+		a:                                snapstore.KindBases,
+		snapstore.DepsKey("npm", "k"):    snapstore.KindDeps,
+		"elsewhere/x":                    "other",
+	} {
+		if got := snapstore.KindOf(key); got != kind {
+			t.Errorf("KindOf(%s) = %s, want %s", key, got, kind)
+		}
+	}
 }
 
 func TestUsageByKind(t *testing.T) {

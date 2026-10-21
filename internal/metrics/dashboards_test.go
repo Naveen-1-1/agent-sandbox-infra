@@ -36,6 +36,7 @@ func defined(t *testing.T) map[string]bool {
 	metrics.NewGateway(r, func() int { return 0 })
 	metrics.NewCost(r, func(context.Context) (cost.Summary, error) { return cost.Summary{}, nil })
 	metrics.NewStorage(r)
+	metrics.NewObjectStore(r)
 	names := map[string]bool{}
 	for _, c := range r.cs {
 		ch := make(chan *prometheus.Desc, 64)
