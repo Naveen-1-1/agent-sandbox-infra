@@ -99,25 +99,21 @@ func (g GitInspector) Devcontainer(ctx context.Context, src sbxv1.Source, base B
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	dir, err := os.MkdirTemp("", "sbx-inspect-*")
-	if err != nil {
-		return "", "couldn't read devcontainer.json: " + err.Error()
-	}
-	defer os.RemoveAll(dir)
-	if _, err := runGit(ctx, dir, "init", "-q", "--bare"); err != nil {
-		return "", "couldn't read devcontainer.json: " + err.Error()
-	}
 	// One commit's trees, without file contents, is all that's needed. A
-	// dumb HTTP server can't do that, so fall back to fetching the ref.
+	// dumb HTTP server can't do that, so fall back to fetching the ref, in a
+	// fresh repository: the failed attempt leaves partial-clone settings
+	// behind that would send every lookup back to the server.
 	ref := src.Ref
 	if ref == "" {
 		ref = "HEAD"
 	}
-	if _, err := runGit(ctx, dir, "fetch", "-q", "--depth", "1", "--filter=blob:none", src.RepoURL, base.SHA); err != nil {
-		if _, err := runGit(ctx, dir, "fetch", "-q", src.RepoURL, ref); err != nil {
+	dir, err := fetchInto(ctx, "--depth", "1", "--filter=blob:none", src.RepoURL, base.SHA)
+	if err != nil {
+		if dir, err = fetchInto(ctx, src.RepoURL, ref); err != nil {
 			return "", "couldn't read devcontainer.json: " + err.Error()
 		}
 	}
+	defer os.RemoveAll(dir)
 	for _, path := range devcontainer.Paths {
 		obj := base.SHA + ":" + path
 		size, err := runGit(ctx, dir, "cat-file", "-s", obj)
@@ -145,10 +141,27 @@ func (g GitInspector) Devcontainer(ctx context.Context, src sbxv1.Source, base B
 	return "", ""
 }
 
+// fetchInto fetches into a new bare repository and returns its directory.
+func fetchInto(ctx context.Context, fetch ...string) (string, error) {
+	dir, err := os.MkdirTemp("", "sbx-inspect-*")
+	if err != nil {
+		return "", err
+	}
+	if _, err = runGit(ctx, dir, "init", "-q", "--bare"); err == nil {
+		_, err = runGit(ctx, dir, append([]string{"fetch", "-q"}, fetch...)...)
+	}
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return "", err
+	}
+	return dir, nil
+}
+
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "GIT_DIR="+dir)
+	// Never fetch a missing object behind our back.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "GIT_NO_LAZY_FETCH=1", "GIT_DIR="+dir)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
