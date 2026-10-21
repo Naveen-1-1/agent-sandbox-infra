@@ -160,12 +160,39 @@ out short-lived presigned URLs. Downloads cover the cached base and the last com
 snapshot. Uploads are create-only and checksum-checked under that workspace's own prefix,
 with the bundle size limit enforced up front.
 
+### Gateway (`cmd/sbx-gateway`, `internal/gateway`, API in `internal/sbxapi`)
+
+The front door for agents, browsers and `sbxctl`. It serves a REST API: create, list, status,
+exec, files, wake, wake-hint, turn-ended and suspend. Each call needs either the admin token
+or that workspace's own token. It answers from an informer cache of Workspaces. A call that
+needs the pod while the workspace is asleep is *held*:
+
+- The gateway asks for a wake by bumping `spec.wake.seq`. It bumps only when no wake is
+  pending, reading the Workspace live and patching with a resourceVersion precondition.
+  So any number of concurrent requests and hints, on any number of replicas, make exactly
+  one wake.
+- Held requests wait on a per-workspace broadcast that informer updates trigger. Per-workspace
+  and global limits answer overflow with `503 queue_full` and `Retry-After`. A timeout answers
+  `504`. A client that goes away leaves at once.
+- If the agent says FROZEN (a suspend started after the check), nothing ran. The gateway
+  asks for a wake, which aborts the suspend before its commit point or wakes it straight
+  after, then retries once.
+- A wake-hint starts the wake and returns at once. Hints are rate-limited and dropped under
+  load, because the real request will wake the workspace anyway.
+
+Status reads, `/healthz`, `/readyz` and `/metrics` never wake anything; the health and
+metrics endpoints are on a separate admin port. Each replica also keeps the traffic signals
+the sleep policy reads: last activity, turn started and ended, open streams and held
+requests. It serves them over gRPC to the controller.
+
 ### Tokens (`internal/token`)
 
 Every per-epoch token is `HMAC(master key, purpose | workspace UID | epoch)`. The purposes
 are sidecar, agent and broker. The controller and gateway hold the master key and recompute
 tokens on demand, so nothing is stored. A pod receives only its own epoch's tokens, so a
-compromised workspace can't mint tokens for another workspace or another epoch.
+compromised workspace can't mint tokens for another workspace or another epoch. The
+gateway token, which clients use, is derived with epoch 0 so that it survives wakes. It
+is never given to the pod.
 
 ### Snapshot store (`internal/snapstore`)
 
@@ -193,15 +220,17 @@ concurrent writers, exactly one create-only write and one compare-and-swap win.
 One umbrella chart installs:
 
 - the controller;
+- the gateway (two replicas);
 - upstream agent-sandbox (vendored and unmodified; can be disabled);
 - optionally, SeaweedFS and a test-only git fixtures server.
 
 The token master key is generated once and kept across upgrades. Images are built from
 binaries cross-compiled on the host and tagged with a content hash, so an upgrade only
-rolls what changed. There are three images:
+rolls what changed. There are four images:
 
 - `sbx-runtime` (sidecar, agent, git) for workspace pods;
 - `sbx-controller`;
+- `sbx-gateway` (distroless);
 - `sbx-fixtures` (git over plain HTTP) for tests and the demo.
 
 ## Key decisions

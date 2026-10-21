@@ -37,12 +37,32 @@ kubectl -n sbx-system get pods
 `make deploy` installs, into `sbx-system`:
 
 - the sbx controller (which serves the broker),
+- the gateway, on `http://127.0.0.1:8080` through kind's port mapping,
 - upstream agent-sandbox,
 - a single-pod SeaweedFS for S3,
 - a small git server with test repositories.
 
 Every endpoint, credential, storage class and image registry is a Helm value in
 `charts/sbx/values.yaml`. `deploy/values/kind.yaml` holds the local overrides.
+
+## Using a workspace
+
+`sbxctl` talks to the gateway. The admin token is in the `sbx-gateway-admin` Secret.
+
+```bash
+go build -o bin/sbxctl ./cmd/sbxctl
+export SBX_TOKEN=$(kubectl -n sbx-system get secret sbx-gateway-admin -o jsonpath='{.data.token}' | base64 -d)
+bin/sbxctl create --repo http://sbx-fixtures.sbx-system.svc/hello-node.git --name demo
+bin/sbxctl wait sbx-workspaces/demo Running
+bin/sbxctl exec sbx-workspaces/demo -- cat README.md
+bin/sbxctl suspend sbx-workspaces/demo        # snapshot to S3, delete the pod and disk
+bin/sbxctl exec sbx-workspaces/demo -- ls     # held while it wakes, then runs
+bin/sbxctl wake-hint sbx-workspaces/demo      # start waking now, return at once
+bin/sbxctl list
+```
+
+`create` prints a token scoped to that one workspace. An agent harness uses it in place of
+the admin token.
 
 ## Development
 
