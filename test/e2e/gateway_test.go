@@ -16,11 +16,12 @@ import (
 	"github.com/Naveen-1-1/agent-sandbox-infra/test/e2e/framework"
 )
 
-// gwWorkspace creates a workspace through the gateway and waits for it.
-func gwWorkspace(t *testing.T, gw *sbxapi.Client, p framework.Platform) (ns, name string, own *sbxapi.Client) {
+// gwWorkspace creates a workspace through the gateway and waits for it. A
+// nil policy means the cluster's.
+func gwWorkspace(t *testing.T, gw *sbxapi.Client, p framework.Platform, pol *sbxapi.PolicyRef) (ns, name string, own *sbxapi.Client) {
 	t.Helper()
 	ctx := framework.Ctx(t, 5*time.Minute)
-	resp, err := gw.Create(ctx, sbxapi.CreateRequest{RepoURL: p.FixturesURL + "/hello-node.git", Image: "debian:trixie-slim"})
+	resp, err := gw.Create(ctx, sbxapi.CreateRequest{RepoURL: p.FixturesURL + "/hello-node.git", Image: "debian:trixie-slim", Policy: pol})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +58,7 @@ func suspendAndWait(t *testing.T, c *sbxapi.Client, ns, name string) *sbxapi.Wor
 func TestGatewayStormWakesOnce(t *testing.T) {
 	gw := framework.Gateway(t)
 	p := framework.DeployedPlatform(t, framework.NewClients(t))
-	ns, name, own := gwWorkspace(t, gw, p)
+	ns, name, own := gwWorkspace(t, gw, p, nil)
 	before := suspendAndWait(t, own, ns, name).Epoch
 
 	var ok, full, other atomic.Int64
@@ -108,7 +109,7 @@ func TestGatewayStormWakesOnce(t *testing.T) {
 func TestStatusAndHealthNeverWake(t *testing.T) {
 	gw := framework.Gateway(t)
 	p := framework.DeployedPlatform(t, framework.NewClients(t))
-	ns, name, own := gwWorkspace(t, gw, p)
+	ns, name, own := gwWorkspace(t, gw, p, nil)
 	suspendAndWait(t, own, ns, name)
 
 	admin := framework.PortForward(t, framework.Namespace(), "svc/sbx-gateway-signals", 8081)
@@ -136,7 +137,7 @@ func TestStatusAndHealthNeverWake(t *testing.T) {
 func TestWakeHintHidesTheWake(t *testing.T) {
 	gw := framework.Gateway(t)
 	p := framework.DeployedPlatform(t, framework.NewClients(t))
-	ns, name, own := gwWorkspace(t, gw, p)
+	ns, name, own := gwWorkspace(t, gw, p, nil)
 	suspendAndWait(t, own, ns, name)
 
 	if err := own.WakeHint(framework.Ctx(t, time.Minute), ns, name); err != nil {
@@ -159,7 +160,7 @@ func TestWakeHintHidesTheWake(t *testing.T) {
 func TestRequestDuringSuspendIsServed(t *testing.T) {
 	gw := framework.Gateway(t)
 	p := framework.DeployedPlatform(t, framework.NewClients(t))
-	ns, name, own := gwWorkspace(t, gw, p)
+	ns, name, own := gwWorkspace(t, gw, p, nil)
 	ctx := framework.Ctx(t, 5*time.Minute)
 	if _, err := own.Exec(ctx, ns, name, sbxapi.ExecRequest{Command: []string{"sh", "-c",
 		"echo keep > keep.txt && head -c 20000000 /dev/urandom | base64 > big.txt"}}); err != nil {

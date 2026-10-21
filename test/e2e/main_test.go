@@ -7,7 +7,13 @@ package e2e
 import (
 	"testing"
 
+	"github.com/go-logr/logr"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/testutil/leaktest"
 )
 
-func TestMain(m *testing.M) { leaktest.VerifyTestMain(m) }
+func TestMain(m *testing.M) {
+	ctrllog.SetLogger(logr.Discard()) // the controller-runtime client used here logs nothing useful
+	leaktest.VerifyTestMain(m)
+}
