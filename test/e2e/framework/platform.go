@@ -3,6 +3,8 @@
 package framework
 
 import (
+	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/sbxapi"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/token"
 )
 
@@ -58,4 +61,21 @@ func Dial(t testing.TB, addr string, opts ...grpc.DialOption) *grpc.ClientConn {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn
+}
+
+// Gateway returns an admin client for the deployed gateway, reached through
+// the kind port mapping (or $SBX_GATEWAY).
+func Gateway(t testing.TB) *sbxapi.Client {
+	t.Helper()
+	url := os.Getenv("SBX_GATEWAY")
+	if url == "" {
+		url = "http://127.0.0.1:8080"
+	}
+	tr := &http.Transport{MaxIdleConnsPerHost: 64}
+	t.Cleanup(tr.CloseIdleConnections)
+	return &sbxapi.Client{
+		BaseURL: url,
+		Token:   strings.TrimSpace(SecretValue(t, Namespace(), "sbx-gateway-admin", "token")),
+		HTTP:    &http.Client{Timeout: 3 * time.Minute, Transport: tr},
+	}
 }
