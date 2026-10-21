@@ -17,10 +17,19 @@ if [[ "$mode" == --lifetime ]]; then
 fi
 price=$(hack/aws-price.sh "$itype" "$capacity" "$region")
 
-kubectl -n "$ns" port-forward svc/sbx-monitoring-prometheus 19090:9090 >/dev/null &
+log=$(mktemp "${TMPDIR:-/tmp}/sbx-forward.XXXXXX")
+kubectl -n "$ns" port-forward svc/sbx-monitoring-prometheus 19090:9090 >"$log" 2>&1 &
 pf=$!
 trap 'kill $pf 2>/dev/null' EXIT
-curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:19090/-/ready
+for i in $(seq 61); do
+  curl -sf -o /dev/null --max-time 5 http://127.0.0.1:19090/-/ready && break
+  if [[ $i == 61 ]] || ! kill -0 "$pf" 2>/dev/null; then
+    echo "Can't reach Prometheus through a port-forward:" >&2
+    cat "$log" >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 python3 - "$run" "$start" "$end" "$outfile" "$nodes" "$price" <<'PY'
 import json, sys, urllib.parse, urllib.request

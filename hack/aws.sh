@@ -23,6 +23,32 @@ export KUBECONFIG=$PWD/bin/kubeconfig-aws
 mkdir -p bin notes
 
 tf() { terraform -chdir="$tfdir" "$@"; }
+
+# forward SERVICE LOCAL:REMOTE URL: port-forward to a service in the
+# platform's namespace and wait until URL answers through it. It prints the
+# forward's pid; on failure it shows why and exits.
+forward() {
+  local log pid
+  log=$(mktemp "${TMPDIR:-/tmp}/sbx-forward.XXXXXX")
+  kubectl -n "$ns" port-forward "svc/$1" "$2" >"$log" 2>&1 &
+  pid=$!
+  for _ in $(seq 60); do
+    if curl -s -o /dev/null --max-time 5 "$3"; then
+      echo "$pid"
+      return
+    fi
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 1
+  done
+  kill "$pid" 2>/dev/null || true
+  {
+    echo "Can't reach svc/$1 through a port-forward. Its output:"
+    cat "$log"
+    echo "Pods in $ns:"
+    kubectl -n "$ns" get pods -o wide
+  } >&2
+  exit 1
+}
 out() { tf output -raw "$1"; }
 say() { printf '\n== %s\n' "$*"; }
 saved_run() { if [[ -f "$tfvars" ]]; then sed -n 's/^run *= *"\(.*\)"/\1/p' "$tfvars"; fi; }
@@ -113,10 +139,9 @@ cmd_bench() {
     echo "x86 nodes: benchmarking graphql-js and pluggy (vggt's CUDA torch is too big to cache)"
     set -- --repos graphql-js,pluggy "$@"
   fi
-  kubectl -n "$ns" port-forward svc/sbx-gateway 18080:80 >/dev/null &
-  pf=$!
+  kubectl -n "$ns" get pods
+  pf=$(forward sbx-gateway 18080:80 http://127.0.0.1:18080/)
   trap 'kill $pf 2>/dev/null' EXIT
-  curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 http://127.0.0.1:18080/
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   go build -o bin/sbx-bench ./cmd/sbx-bench
   SBX_GATEWAY=http://127.0.0.1:18080 NAMESPACE="$ns" hack/bench.sh --env aws \
