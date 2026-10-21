@@ -73,8 +73,17 @@ envtest: ## Install kube-apiserver and etcd for envtest into bin/envtest.
 	  $(TOOL) setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(CURDIR)/bin/envtest -p path
 
 .PHONY: test
-test: vet envtest ## Run all unit tests (race detector, goroutine-leak checks, envtest).
+test: vet envtest extension ## Run all unit tests (race detector, goroutine-leak checks, envtest) and the extension's.
 	$(GO) test -race -shuffle=on $(PKGS)
+
+EXTENSION := extensions/vscode-activity
+
+$(EXTENSION)/node_modules/.package-lock.json: $(EXTENSION)/package-lock.json
+	cd $(EXTENSION) && npm ci --no-audit --no-fund --silent
+
+.PHONY: extension
+extension: $(EXTENSION)/node_modules/.package-lock.json ## Type-check, test and build the editor activity extension.
+	cd $(EXTENSION) && npm run --silent check && npm test --silent && npm run --silent build
 
 .PHONY: test-short
 test-short: ## Run fast unit tests only (no race detector, no envtest).
@@ -121,7 +130,7 @@ build-linux: ## Cross-compile the in-cluster binaries into bin/linux_$(ARCH).
 	done
 
 .PHONY: images
-images: build-linux ## Build container images tagged with a content hash.
+images: build-linux extension ## Build container images tagged with a content hash.
 	@tag=$(TAG); for img in $(IMAGES); do \
 	  docker build -q --platform linux/$(ARCH) --provenance=false -f images/$${img#sbx-}.Dockerfile \
 	    -t $(REGISTRY)/$$img:$$tag . >/dev/null || exit 1; \
