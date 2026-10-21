@@ -203,7 +203,9 @@ make cost-report COST_ARGS="--actual notes/aws-cost-<run>.json --modeled notes/a
 ```
 
 `AWS_NODES=3` and `AWS_CAPACITY=SPOT` change the nodes, and `AWS_REGION` the region (by default your
-AWS CLI profile's). To reach the platform, use a port-forward
+AWS CLI profile's). An account on the AWS Free plan can only run Free Tier instance types. For one, plan
+with `AWS_INSTANCE_TYPE=m7i-flex.large` (x86, 2 vCPU, 8 GiB). The images are then built for amd64, and the
+bench leaves out vggt, whose x86 torch is the 5 GB CUDA build. To reach the platform, use a port-forward
 with `bin/kubeconfig-aws`. For the gateway and editors (`*.sbx.localhost:8080`):
 `kubectl --kubeconfig bin/kubeconfig-aws -n sbx-system port-forward svc/sbx-gateway 8080:80`.
 Grafana is on `svc/sbx-grafana`. `make aws-verify RUN=<run>` checks again that nothing of a run

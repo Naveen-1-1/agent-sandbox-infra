@@ -5,11 +5,14 @@
 
 ##@ AWS
 
-AWS_ENV = RUN=$(RUN) AWS_REGION=$(AWS_REGION) AWS_NODES=$(AWS_NODES) AWS_CAPACITY=$(AWS_CAPACITY) APPROVED=$(APPROVED)
+AWS_ENV = RUN=$(RUN) AWS_REGION=$(AWS_REGION) AWS_NODES=$(AWS_NODES) AWS_CAPACITY=$(AWS_CAPACITY) \
+  AWS_INSTANCE_TYPE=$(AWS_INSTANCE_TYPE) APPROVED=$(APPROVED)
 # The AWS CLI profile's region (accounts are often limited to one), else us-east-1.
 AWS_REGION   ?= $(or $(shell aws configure get region 2>/dev/null),us-east-1)
 AWS_NODES    ?= 2
 AWS_CAPACITY ?= ON_DEMAND
+# Accounts on the AWS Free plan only run Free Tier types: use m7i-flex.large.
+AWS_INSTANCE_TYPE ?= m7g.large
 
 .PHONY: aws-plan
 aws-plan: ## Plan the AWS environment and estimate its hourly cost; changes nothing (RUN, AWS_NODES, AWS_CAPACITY=SPOT).

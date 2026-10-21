@@ -31,6 +31,11 @@ output "instance_type" {
   value = var.instance_type
 }
 
+# The nodes' CPU architecture, which images are built for.
+output "arch" {
+  value = local.node_arch
+}
+
 output "capacity_type" {
   value = var.capacity_type
 }

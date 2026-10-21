@@ -1,6 +1,12 @@
-# One managed node group of Graviton nodes on Amazon Linux 2023. The launch
-# template sets the root disk and carries the tags onto the instances,
-# their disks and network interfaces.
+# One managed node group on Amazon Linux 2023: Graviton (arm64) by default,
+# or x86 for accounts on the AWS Free plan, which only allows Free Tier
+# types such as m7i-flex.large. The launch template sets the root disk and
+# carries the tags onto the instances, their disks and network interfaces.
+locals {
+  # Graviton types have a "g" after the generation: m7g, c7g, t4g.
+  node_arch = can(regex("^[a-z]+[0-9]+g[a-z]*[.-]", var.instance_type)) ? "arm64" : "amd64"
+}
+
 data "aws_iam_policy_document" "ec2_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -51,11 +57,13 @@ resource "aws_launch_template" "node" {
 }
 
 resource "aws_eks_node_group" "this" {
-  cluster_name    = aws_eks_cluster.this.name
-  node_group_name = local.name
+  cluster_name = aws_eks_cluster.this.name
+  # Named after the instance type, so a new type gets a new group that is
+  # up before the old one goes.
+  node_group_name = "${local.name}-${replace(var.instance_type, ".", "-")}"
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = aws_subnet.public[*].id
-  ami_type        = "AL2023_ARM_64_STANDARD"
+  ami_type        = local.node_arch == "arm64" ? "AL2023_ARM_64_STANDARD" : "AL2023_x86_64_STANDARD"
   capacity_type   = var.capacity_type
   instance_types  = [var.instance_type]
 
@@ -72,5 +80,8 @@ resource "aws_eks_node_group" "this" {
     version = aws_launch_template.node.latest_version
   }
 
+  lifecycle {
+    create_before_destroy = true
+  }
   depends_on = [aws_iam_role_policy_attachment.node, aws_eks_addon.vpc_cni]
 }

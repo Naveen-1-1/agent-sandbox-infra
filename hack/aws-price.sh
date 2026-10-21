@@ -7,7 +7,8 @@ set -euo pipefail
 itype=${1:?usage: aws-price.sh INSTANCE_TYPE ON_DEMAND|SPOT [REGION]} capacity=${2:-ON_DEMAND} region=${3:-us-east-1}
 case "$itype" in
 m7g.medium) od=0.0408 ;; m7g.large) od=0.0816 ;; m7g.xlarge) od=0.1632 ;; m7g.2xlarge) od=0.3264 ;;
-t4g.large) od=0.0672 ;; t4g.xlarge) od=0.1344 ;; m6g.large) od=0.077 ;; c7g.large) od=0.0725 ;;
+t4g.small) od=0.0168 ;; t4g.large) od=0.0672 ;; t4g.xlarge) od=0.1344 ;; m6g.large) od=0.077 ;; c7g.large) od=0.0725 ;;
+m7i-flex.large) od=0.09576 ;; c7i-flex.large) od=0.08479 ;; m7i.large) od=0.1008 ;; t3.small) od=0.0208 ;;
 *) echo "no list price for $itype; add it to hack/aws-price.sh" >&2; exit 1 ;;
 esac
 if [[ "$capacity" == SPOT ]]; then

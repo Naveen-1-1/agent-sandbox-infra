@@ -20,7 +20,7 @@ variable "kubernetes_version" {
 }
 
 variable "instance_type" {
-  description = "Node instance type: Graviton (arm64), like the images built on Apple silicon."
+  description = "Node instance type: Graviton (arm64) like the images built on Apple silicon, or x86 (m7i-flex.large on the AWS Free plan); images are built to match."
   type        = string
   default     = "m7g.large"
 }

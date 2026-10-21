@@ -73,23 +73,28 @@ cmd_apply() {
 }
 
 cmd_deploy() {
-  local region cluster registry bucket arch tag tools
+  local region cluster registry bucket arch tag tools price cpu mem
   region=$(out region) cluster=$(out cluster_name) registry=$(out registry) bucket=$(out bucket)
   say "Connecting to $cluster"
   aws eks update-kubeconfig --name "$cluster" --region "$region" --kubeconfig "$KUBECONFIG" >/dev/null
   kubectl get nodes -o wide
   kubectl apply -f deploy/aws/storageclass-gp3.yaml
 
-  say "Pushing images to $registry"
+  arch=$(out arch)
+  say "Pushing $arch images to $registry"
   aws ecr get-login-password --region "$region" | docker login --username AWS --password-stdin "${registry%%/*}" >/dev/null
-  make push REGISTRY="$registry" IMAGES="sbx-runtime sbx-controller sbx-gateway"
+  make push ARCH="$arch" REGISTRY="$registry" IMAGES="sbx-runtime sbx-controller sbx-gateway"
 
-  arch=$(go env GOARCH)
   tag=$(hack/image-tag.sh "$arch")
   tools=$(hack/aws-preflight.sh "$registry/sbx-runtime:$tag")
-  say "Installing the platform (workspace tools: $tools)"
-  make deploy REGISTRY="$registry" VALUES=deploy/values/aws.yaml IMAGES="sbx-runtime sbx-controller sbx-gateway" \
-    DEPLOY_ARGS="--set s3.bucket=$bucket --set s3.region=$region --set workspace.tools=$tools"
+  # Price CPU and memory so that 2 vCPU and 8 GiB cost what the node does
+  # (two thirds CPU, one third memory, as EC2's general-purpose types).
+  price=$(hack/aws-price.sh "$(out instance_type)" ON_DEMAND "$region")
+  cpu=$(awk -v p="$price" 'BEGIN {printf "%.6f", p / 3}')
+  mem=$(awk -v p="$price" 'BEGIN {printf "%.6f", p / 24}')
+  say "Installing the platform (workspace tools: $tools; \$$cpu per vCPU-hour, \$$mem per GiB-hour)"
+  make deploy ARCH="$arch" REGISTRY="$registry" VALUES=deploy/values/aws.yaml IMAGES="sbx-runtime sbx-controller sbx-gateway" \
+    DEPLOY_ARGS="--set s3.bucket=$bucket --set s3.region=$region --set workspace.tools=$tools --set pricing.cpuCoreHour=$cpu --set pricing.memoryGiBHour=$mem"
 
   say "Turning on the cost allocation tags (once per account; Cost Explorer may need up to a day to see them)"
   aws ce update-cost-allocation-tags-status --region us-east-1 \
@@ -102,6 +107,12 @@ cmd_deploy() {
 cmd_bench() {
   local region bucket run pf start end
   region=$(out region) bucket=$(out bucket) run=$(out run)
+  # On x86, torch from PyPI is the CUDA build (about 5 GB with its NVIDIA
+  # libraries): too big to cache, so the ML repository is left out there.
+  if [[ "$(out arch)" == amd64 && " $* " != *" --repos "* ]]; then
+    echo "x86 nodes: benchmarking graphql-js and pluggy (vggt's CUDA torch is too big to cache)"
+    set -- --repos graphql-js,pluggy "$@"
+  fi
   kubectl -n "$ns" port-forward svc/sbx-gateway 18080:80 >/dev/null &
   pf=$!
   trap 'kill $pf 2>/dev/null' EXIT
