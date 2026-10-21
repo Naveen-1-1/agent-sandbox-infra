@@ -1,0 +1,13 @@
+{
+  "name": "hello-deps",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node test.js",
+    "dev": "node server.js",
+    "postinstall": "sleep 5"
+  },
+  "dependencies": {
+    "sbx-greeting": "file:vendor/sbx-greeting-1.0.0.tgz"
+  }
+}
