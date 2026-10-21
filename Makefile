@@ -73,7 +73,7 @@ envtest: ## Install kube-apiserver and etcd for envtest into bin/envtest.
 	  $(TOOL) setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(CURDIR)/bin/envtest -p path
 
 .PHONY: test
-test: vet envtest extension ## Run all unit tests (race detector, goroutine-leak checks, envtest) and the extension's.
+test: vet envtest extension web ## Run all unit tests (race detector, goroutine-leak checks, envtest), the extension's and the UI's.
 	$(GO) test -race -shuffle=on $(PKGS)
 
 EXTENSION := extensions/vscode-activity
@@ -84,6 +84,15 @@ $(EXTENSION)/node_modules/.package-lock.json: $(EXTENSION)/package-lock.json
 .PHONY: extension
 extension: $(EXTENSION)/node_modules/.package-lock.json ## Type-check, test and build the editor activity extension.
 	cd $(EXTENSION) && npm run --silent check && npm test --silent && npm run --silent build
+
+WEB := web
+
+$(WEB)/node_modules/.package-lock.json: $(WEB)/package-lock.json
+	cd $(WEB) && npm ci --no-audit --no-fund --silent
+
+.PHONY: web
+web: $(WEB)/node_modules/.package-lock.json ## Type-check, test and build the web UI into the gateway (internal/gateway/webui/dist).
+	cd $(WEB) && npm run --silent check && npm test --silent && npm run --silent build -- --logLevel warn
 
 .PHONY: test-short
 test-short: ## Run fast unit tests only (no race detector, no envtest).
@@ -123,7 +132,7 @@ IMAGES   := sbx-runtime sbx-controller sbx-gateway sbx-fixtures
 TAG = $(shell hack/image-tag.sh $(ARCH))
 
 .PHONY: build-linux
-build-linux: ## Cross-compile the in-cluster binaries into bin/linux_$(ARCH).
+build-linux: web ## Cross-compile the in-cluster binaries into bin/linux_$(ARCH) (the gateway embeds the UI).
 	@for b in $(BINARIES); do \
 	  CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) $(GO) build -trimpath -buildvcs=false -ldflags "-s -w" \
 	    -o bin/linux_$(ARCH)/$$b ./cmd/$$b || exit 1; \
@@ -186,3 +195,9 @@ demo: ## Play an agent session that sleeps and wakes (run `make kind-up deploy` 
 	$(GO) build -o bin/sbxctl ./cmd/sbxctl
 	@SBX_TOKEN=$$(kubectl -n $(NAMESPACE) get secret sbx-gateway-admin -o jsonpath='{.data.token}' | base64 -d) \
 	  bin/sbxctl demo --image $(DEMO_IMAGE) $(DEMO_ARGS)
+
+.PHONY: ui
+ui: ## Print a link that opens the web UI signed in as admin (run `make kind-up deploy` first).
+	@$(GO) build -o bin/sbxctl ./cmd/sbxctl
+	@SBX_TOKEN=$$(kubectl -n $(NAMESPACE) get secret sbx-gateway-admin -o jsonpath='{.data.token}' | base64 -d) \
+	  bin/sbxctl ui
