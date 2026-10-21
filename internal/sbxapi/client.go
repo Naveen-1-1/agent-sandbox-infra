@@ -128,6 +128,24 @@ func (c *Client) Suspend(ctx context.Context, ns, name string) error {
 	return c.do(ctx, http.MethodPost, path(ns, name, "suspend"), nil, nil)
 }
 
+// Services lists the declared services and, if the workspace is awake,
+// their state. It never wakes the workspace.
+func (c *Client) Services(ctx context.Context, ns, name string) ([]Service, error) {
+	var out []Service
+	return out, c.do(ctx, http.MethodGet, path(ns, name, "services"), nil, &out)
+}
+
+// PutService declares (or redeclares) a service. It starts now if the
+// workspace is awake, and after every wake.
+func (c *Client) PutService(ctx context.Context, ns, name string, svc Service) error {
+	return c.do(ctx, http.MethodPut, path(ns, name, "services", svc.Name), svc, nil)
+}
+
+// DeleteService stops a service and removes its declaration.
+func (c *Client) DeleteService(ctx context.Context, ns, name, svc string) error {
+	return c.do(ctx, http.MethodDelete, path(ns, name, "services", svc), nil, nil)
+}
+
 // ReadFile returns a workspace file's contents.
 func (c *Client) ReadFile(ctx context.Context, ns, name, file string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(c.BaseURL, "/")+path(ns, name, "files", strings.TrimPrefix(file, "/")), nil)

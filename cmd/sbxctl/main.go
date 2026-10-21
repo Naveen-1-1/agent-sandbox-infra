@@ -4,7 +4,8 @@
 //	              [--policy fixed --param idleTimeout=5m ...]
 //	sbxctl list
 //	sbxctl get NS/NAME
-//	sbxctl exec NS/NAME -- COMMAND [ARGS...]
+//	sbxctl exec [--wait-for deps|none] NS/NAME -- COMMAND [ARGS...]
+//	sbxctl service list|start|stop NS/NAME [SVC -- COMMAND ...]
 //	sbxctl cat NS/NAME PATH            sbxctl put NS/NAME PATH < file
 //	sbxctl wake | wake-hint | turn-ended | suspend | delete | token NS/NAME
 //	sbxctl wait NS/NAME PHASE [--timeout 3m]
@@ -109,6 +110,12 @@ func run(args []string) error {
 		return tw.Flush()
 
 	case "exec":
+		fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+		wait := fs.String("wait-for", "", `"deps" to always wait for dependencies, "none" to never (default: inferred)`)
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		rest = fs.Args()
 		ns, name, err := target(rest)
 		if err != nil {
 			return err
@@ -118,9 +125,13 @@ func run(args []string) error {
 			argv = argv[1:]
 		}
 		if len(argv) == 0 {
-			return errors.New("usage: sbxctl exec NS/NAME -- COMMAND [ARGS...]")
+			return errors.New("usage: sbxctl exec [--wait-for deps|none] NS/NAME -- COMMAND [ARGS...]")
 		}
-		out, err := c.Exec(ctx, ns, name, sbxapi.ExecRequest{Command: argv})
+		req := sbxapi.ExecRequest{Command: argv}
+		if *wait != "" {
+			req.WaitFor = []string{*wait}
+		}
+		out, err := c.Exec(ctx, ns, name, req)
 		if err != nil {
 			return err
 		}
@@ -131,6 +142,9 @@ func run(args []string) error {
 		fmt.Fprint(os.Stderr, out.Stderr)
 		if out.WaitedMillis > 0 {
 			fmt.Fprintf(os.Stderr, "(waited %dms for the workspace to wake)\n", out.WaitedMillis)
+		}
+		if out.DepsWaitedMillis > 0 {
+			fmt.Fprintf(os.Stderr, "(waited %dms for dependencies)\n", out.DepsWaitedMillis)
 		}
 		if out.ExitCode != 0 {
 			os.Exit(int(out.ExitCode))
@@ -154,6 +168,9 @@ func run(args []string) error {
 			return err
 		}
 		return c.WriteFile(ctx, ns, name, rest[1], data)
+
+	case "service":
+		return service(ctx, c, rest, *asJSON)
 
 	case "demo":
 		fs := flag.NewFlagSet("demo", flag.ContinueOnError)
@@ -238,6 +255,74 @@ func run(args []string) error {
 		return err
 	}
 	return fmt.Errorf("unknown command %q", cmd)
+}
+
+// service runs the service subcommands:
+//
+//	sbxctl service list NS/NAME
+//	sbxctl service start [--cwd DIR] [--env K=V] [--no-wait-deps] NS/NAME SVC -- COMMAND [ARGS...]
+//	sbxctl service stop NS/NAME SVC
+func service(ctx context.Context, c *sbxapi.Client, args []string, asJSON bool) error {
+	if len(args) == 0 {
+		return errors.New("usage: sbxctl service list|start|stop NS/NAME")
+	}
+	sub, args := args[0], args[1:]
+	fs := flag.NewFlagSet("service "+sub, flag.ContinueOnError)
+	cwd := fs.String("cwd", "", "working directory, relative to the workspace")
+	noWait := fs.Bool("no-wait-deps", false, "start without waiting for dependencies")
+	env := map[string]string{}
+	fs.Func("env", "environment variable as K=V (repeatable)", func(v string) error {
+		k, val, ok := strings.Cut(v, "=")
+		if !ok {
+			return errors.New("want K=V")
+		}
+		env[k] = val
+		return nil
+	})
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	args = fs.Args()
+	ns, name, err := target(args)
+	if err != nil {
+		return err
+	}
+	switch sub {
+	case "list":
+		list, err := c.Services(ctx, ns, name)
+		if err != nil {
+			return err
+		}
+		if asJSON {
+			return printJSON(list)
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+		fmt.Fprintln(tw, "SERVICE\tRUNNING\tRESTARTS\tCOMMAND")
+		for _, s := range list {
+			fmt.Fprintf(tw, "%s\t%v\t%d\t%s\n", s.Name, s.Running, s.Restarts, strings.Join(s.Command, " "))
+		}
+		return tw.Flush()
+	case "start":
+		if len(args) < 2 {
+			return errors.New("usage: sbxctl service start NS/NAME SVC -- COMMAND [ARGS...]")
+		}
+		argv := args[2:]
+		if len(argv) > 0 && argv[0] == "--" {
+			argv = argv[1:]
+		}
+		svc := sbxapi.Service{Name: args[1], Command: argv, Cwd: *cwd, Env: env}
+		if *noWait {
+			f := false
+			svc.WaitForDeps = &f
+		}
+		return c.PutService(ctx, ns, name, svc)
+	case "stop":
+		if len(args) != 2 {
+			return errors.New("usage: sbxctl service stop NS/NAME SVC")
+		}
+		return c.DeleteService(ctx, ns, name, args[1])
+	}
+	return fmt.Errorf("unknown service command %q", sub)
 }
 
 // sleepSummary is the sleep verdict in a few words, e.g. "Active (4m10s)".

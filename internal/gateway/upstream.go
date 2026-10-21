@@ -15,6 +15,7 @@ import (
 	processv1 "sigs.k8s.io/agent-sandbox/packages/sandboxd/spec/process/v1"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
+	agentv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/agent/v1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/agent"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/sbxapi"
 )
@@ -53,6 +54,21 @@ func (s *Server) execute(ctx context.Context, ws *sbxv1.Workspace, r sbxapi.Exec
 		return nil, true, nil
 	}
 	return resp, false, err
+}
+
+// agentServices lists the services running in ws's pod.
+func (s *Server) agentServices(ctx context.Context, ws *sbxv1.Workspace) ([]*agentv1.ServiceStatus, error) {
+	conn, err := grpc.NewClient(net.JoinHostPort(ws.Status.Pod.IP, strconv.Itoa(s.cfg.AgentGRPCPort)),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(bearerCreds(s.cfg.AgentToken(ws))))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := agentv1.NewAgentServiceClient(conn).ListServices(ctx, &agentv1.ListServicesRequest{})
+	return resp.GetServices(), err
 }
 
 // forwardFile proxies one files-API request to the pod's agent. A frozen

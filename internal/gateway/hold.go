@@ -79,6 +79,12 @@ func (h *Holder) Notify(key string) {
 // Wait returns once ready reports true, or with ErrQueueFull, ErrWakeTimeout,
 // the context's error, or ready's error.
 func (h *Holder) Wait(ctx context.Context, key string, ready func() (bool, error)) error {
+	return h.WaitFor(ctx, key, h.Timeout, ready)
+}
+
+// WaitFor is Wait with its own timeout, for waits longer than a wake (a
+// dependency install, say).
+func (h *Holder) WaitFor(ctx context.Context, key string, d time.Duration, ready func() (bool, error)) error {
 	if ok, err := ready(); ok || err != nil {
 		return err
 	}
@@ -95,7 +101,7 @@ func (h *Holder) Wait(ctx context.Context, key string, ready func() (bool, error
 		}
 	}()
 
-	timeout := time.NewTimer(h.Timeout)
+	timeout := time.NewTimer(d)
 	defer timeout.Stop()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -21,10 +22,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
+	processv1 "sigs.k8s.io/agent-sandbox/packages/sandboxd/spec/process/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
+	agentv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/agent/v1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/podspec"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/depcache"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/policy"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/sbxapi"
@@ -44,6 +49,9 @@ type Config struct {
 	HoldTimeout      time.Duration
 
 	ExecTimeout time.Duration
+	// DepsTimeout bounds how long a command waits for the dependency
+	// directory (an install can take minutes).
+	DepsTimeout time.Duration
 	// MaxBufferedBody is the largest file upload buffered so it can be
 	// retried after a wake.
 	MaxBufferedBody int64
@@ -69,6 +77,9 @@ func (c *Config) defaults() {
 	}
 	if c.ExecTimeout <= 0 {
 		c.ExecTimeout = 10 * time.Minute
+	}
+	if c.DepsTimeout <= 0 {
+		c.DepsTimeout = 15 * time.Minute
 	}
 	if c.MaxBufferedBody <= 0 {
 		c.MaxBufferedBody = 8 << 20
@@ -181,6 +192,9 @@ func (s *Server) APIHandler() http.Handler {
 	mux.HandleFunc("POST "+ws+"/turn-ended", s.member(s.turnEnded))
 	mux.HandleFunc("POST "+ws+"/suspend", s.member(s.suspend))
 	mux.HandleFunc(ws+"/files/{path...}", s.member(s.files))
+	mux.HandleFunc("GET "+ws+"/services", s.member(s.listServices))
+	mux.HandleFunc("PUT "+ws+"/services/{svc}", s.member(s.putService))
+	mux.HandleFunc("DELETE "+ws+"/services/{svc}", s.member(s.deleteService))
 	return s.instrument(mux)
 }
 
@@ -273,6 +287,8 @@ func (s *Server) wakeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrQueueFull):
 		s.reject(w, http.StatusServiceUnavailable, sbxapi.CodeQueueFull, "too many requests waiting for this workspace to wake", metrics.RejectQueueFull)
+	case errors.Is(err, errDepsTimeout):
+		s.reject(w, http.StatusGatewayTimeout, sbxapi.CodeDepsTimeout, "the dependencies weren't restored in time", metrics.RejectWakeTimeout)
 	case errors.Is(err, ErrWakeTimeout):
 		s.reject(w, http.StatusGatewayTimeout, sbxapi.CodeWakeTimeout, "the workspace did not wake in time", metrics.RejectWakeTimeout)
 	case errors.Is(err, ErrOff):
@@ -391,6 +407,11 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 			Image:  req.Image, Mode: sbxv1.Mode(req.Mode),
 		},
 	}
+	for _, svc := range req.Services {
+		ws.Spec.Services = append(ws.Spec.Services, sbxv1.ServiceSpec{
+			Name: svc.Name, Command: svc.Command, Cwd: svc.Cwd, Env: svc.Env, WaitForDeps: svc.WaitForDeps,
+		})
+	}
 	if p := req.Policy; p != nil {
 		if _, err := policy.New(p.Name, p.Params); err != nil {
 			writeErr(w, http.StatusBadRequest, sbxapi.CodeInvalid, "policy: "+err.Error())
@@ -446,6 +467,12 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspac
 		writeErr(w, http.StatusBadRequest, sbxapi.CodeInvalid, "command is required")
 		return
 	}
+	for _, v := range req.WaitFor {
+		if v != waitDeps && v != waitNone {
+			writeErr(w, http.StatusBadRequest, sbxapi.CodeInvalid, `waitFor takes "deps" or "none"`)
+			return
+		}
+	}
 	key := client.ObjectKeyFromObject(ws).String()
 	s.signals.Touch(key)
 	ctx := r.Context()
@@ -454,7 +481,18 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspac
 		s.wakeErr(w, err)
 		return
 	}
-	resp, frozen, err := s.execute(ctx, cur, req)
+	var depsWaited time.Duration
+	run := func() (*processv1.ExecuteResponse, bool, error) {
+		if needsDeps(cur, req) {
+			var d time.Duration
+			if cur, d, err = s.awaitDeps(ctx, cur); err != nil {
+				return nil, false, err
+			}
+			depsWaited += d
+		}
+		return s.execute(ctx, cur, req)
+	}
+	resp, frozen, err := run()
 	if frozen {
 		// A suspend froze the workload after we checked; nothing ran. Our
 		// wake request aborts the suspend (or wakes it right after).
@@ -464,7 +502,11 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspac
 			return
 		}
 		waited += more
-		resp, frozen, err = s.execute(ctx, cur, req)
+		resp, frozen, err = run()
+	}
+	if errors.Is(err, errDepsTimeout) || errors.Is(err, ErrQueueFull) || errors.Is(err, context.Canceled) {
+		s.wakeErr(w, err)
+		return
 	}
 	if err != nil || frozen {
 		if err == nil {
@@ -476,8 +518,54 @@ func (s *Server) exec(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspac
 	s.signals.Touch(key)
 	writeJSON(w, http.StatusOK, sbxapi.ExecResponse{
 		ExitCode: resp.GetExitCode(), Stdout: string(resp.GetStdout()), Stderr: string(resp.GetStderr()),
-		WaitedMillis: waited.Milliseconds(),
+		WaitedMillis: waited.Milliseconds(), DepsWaitedMillis: depsWaited.Milliseconds(),
 	})
+}
+
+// ExecRequest.WaitFor values.
+const (
+	waitDeps = "deps"
+	waitNone = "none"
+)
+
+var errDepsTimeout = errors.New("gateway: dependencies weren't restored in time")
+
+// needsDeps reports whether a command must wait for the dependency
+// directory: it asks to, or it runs the package manager or the runtime the
+// workspace's profile installs for. Before the profile is known, any
+// profile's commands count.
+func needsDeps(ws *sbxv1.Workspace, req sbxapi.ExecRequest) bool {
+	switch {
+	case !sbxv1.DepsPending(ws), slices.Contains(req.WaitFor, waitNone):
+		return false
+	case slices.Contains(req.WaitFor, waitDeps):
+		return true
+	}
+	if d := ws.Status.Deps; d != nil && d.Profile != "" {
+		p, ok := depcache.Lookup(d.Profile)
+		return ok && p.NeedsDeps(req.Command)
+	}
+	return slices.ContainsFunc(depcache.Profiles, func(p depcache.Profile) bool { return p.NeedsDeps(req.Command) })
+}
+
+// awaitDeps holds a command until ws's dependency restore settles (ready
+// or failed: a failed restore lets the command run and report the error).
+func (s *Server) awaitDeps(ctx context.Context, ws *sbxv1.Workspace) (*sbxv1.Workspace, time.Duration, error) {
+	key := client.ObjectKeyFromObject(ws)
+	start := time.Now()
+	cur := ws
+	err := s.holder.WaitFor(ctx, key.String(), s.cfg.DepsTimeout, func() (bool, error) {
+		fresh := &sbxv1.Workspace{}
+		if err := s.cache.Get(ctx, key, fresh); err != nil {
+			return false, err
+		}
+		cur = fresh
+		return !sbxv1.DepsPending(fresh), nil
+	})
+	if errors.Is(err, ErrWakeTimeout) {
+		err = errDepsTimeout
+	}
+	return cur, time.Since(start), err
 }
 
 // awakeAfterFreeze asks for a wake (the API, not our cache, knows a suspend
@@ -604,6 +692,91 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspa
 	_, _ = io.Copy(w, resp.Body)
 }
 
+func (s *Server) listServices(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspace) {
+	out := make([]sbxapi.Service, 0, len(ws.Spec.Services))
+	var running map[string]*agentv1.ServiceStatus
+	if Ready(ws) { // never wake for a status read
+		if st, err := s.agentServices(r.Context(), ws); err == nil {
+			running = map[string]*agentv1.ServiceStatus{}
+			for _, x := range st {
+				running[x.GetService().GetName()] = x
+			}
+		}
+	}
+	for _, sp := range ws.Spec.Services {
+		svc := sbxapi.Service{Name: sp.Name, Command: sp.Command, Cwd: sp.Cwd, Env: sp.Env, WaitForDeps: sp.WaitForDeps}
+		if x := running[sp.Name]; x != nil {
+			svc.Running, svc.Pid, svc.Restarts = x.GetRunning(), x.GetPid(), x.GetRestarts()
+			svc.LastExitCode, svc.Output = x.GetLastExitCode(), x.GetOutputTail()
+		}
+		out = append(out, svc)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// putService declares a service. The controller starts it (now if the
+// workspace is awake, and after every wake); it doesn't wake a sleeping one.
+func (s *Server) putService(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspace) {
+	var svc sbxapi.Service
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&svc); err != nil || len(svc.Command) == 0 {
+		writeErr(w, http.StatusBadRequest, sbxapi.CodeInvalid, "command is required")
+		return
+	}
+	spec := sbxv1.ServiceSpec{Name: r.PathValue("svc"), Command: svc.Command, Cwd: svc.Cwd, Env: svc.Env, WaitForDeps: svc.WaitForDeps}
+	err := s.patchServices(r.Context(), ws, func(list []sbxv1.ServiceSpec) []sbxv1.ServiceSpec {
+		if i := slices.IndexFunc(list, func(x sbxv1.ServiceSpec) bool { return x.Name == spec.Name }); i >= 0 {
+			list[i] = spec
+			return list
+		}
+		return append(list, spec)
+	})
+	if err != nil {
+		s.patchErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) deleteService(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspace) {
+	name := r.PathValue("svc")
+	err := s.patchServices(r.Context(), ws, func(list []sbxv1.ServiceSpec) []sbxv1.ServiceSpec {
+		return slices.DeleteFunc(list, func(x sbxv1.ServiceSpec) bool { return x.Name == name })
+	})
+	if err != nil {
+		s.patchErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// patchServices rewrites spec.services with a resourceVersion
+// precondition, retrying on conflicts.
+func (s *Server) patchServices(ctx context.Context, ws *sbxv1.Workspace, edit func([]sbxv1.ServiceSpec) []sbxv1.ServiceSpec) error {
+	key := client.ObjectKeyFromObject(ws)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cur := &sbxv1.Workspace{}
+		if err := s.waker.API.Get(ctx, key, cur); err != nil {
+			return err
+		}
+		patch, err := json.Marshal(map[string]any{
+			"metadata": map[string]any{"resourceVersion": cur.ResourceVersion},
+			"spec":     map[string]any{"services": edit(slices.Clone(cur.Spec.Services))},
+		})
+		if err != nil {
+			return err
+		}
+		return s.client.Patch(ctx, cur, client.RawPatch(types.MergePatchType, patch))
+	})
+}
+
+func (s *Server) patchErr(w http.ResponseWriter, err error) {
+	if apierrors.IsInvalid(err) {
+		writeErr(w, http.StatusBadRequest, sbxapi.CodeInvalid, err.Error())
+		return
+	}
+	writeErr(w, http.StatusInternalServerError, sbxapi.CodeInternal, err.Error())
+}
+
 // View is the public view of a workspace.
 func View(ws *sbxv1.Workspace) sbxapi.Workspace {
 	v := sbxapi.Workspace{
@@ -629,6 +802,12 @@ func View(ws *sbxv1.Workspace) sbxapi.Workspace {
 	}
 	if p := ws.Spec.Policy; p != nil {
 		v.Policy = &sbxapi.PolicyRef{Name: p.Name, Params: p.Params}
+	}
+	if c := meta.FindStatusCondition(ws.Status.Conditions, sbxv1.ConditionDepsReady); c != nil && ws.Status.Phase == sbxv1.PhaseRunning {
+		v.Deps = &sbxapi.Deps{Pending: sbxv1.DepsPending(ws), Ready: c.Status == metav1.ConditionTrue, Message: c.Message}
+		if d := ws.Status.Deps; d != nil {
+			v.Deps.Profile, v.Deps.Source = d.Profile, d.Source
+		}
 	}
 	if sl := ws.Status.Sleep; sl != nil {
 		v.Sleep = &sbxapi.Sleep{Policy: sl.Policy, Reason: sl.Reason, Message: sl.Message, SuspendAt: timePtr(sl.SuspendAt)}

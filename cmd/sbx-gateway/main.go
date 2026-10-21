@@ -49,6 +49,7 @@ func main() {
 	flag.IntVar(&cfg.HoldGlobal, "hold-global", envInt("SBX_HOLD_GLOBAL", 4096), "requests that may wait in total")
 	flag.DurationVar(&cfg.HoldTimeout, "hold-timeout", envDuration("SBX_HOLD_TIMEOUT", 90*time.Second), "how long a request may wait for a wake")
 	flag.DurationVar(&cfg.ExecTimeout, "exec-timeout", envDuration("SBX_EXEC_TIMEOUT", 10*time.Minute), "default command timeout")
+	flag.DurationVar(&cfg.DepsTimeout, "deps-timeout", envDuration("SBX_DEPS_TIMEOUT", 15*time.Minute), "how long a command may wait for dependencies")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("component", "sbx-gateway")

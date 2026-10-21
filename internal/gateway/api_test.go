@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -472,5 +473,141 @@ func TestSignalsReportTraffic(t *testing.T) {
 	s := resp.GetSignals()[key]
 	if s.GetLastActivity() == nil || s.GetLastTurnStarted() == nil || s.GetLastTurnEnded() == nil {
 		t.Fatalf("signals = %v", s)
+	}
+}
+
+// setDeps sets ws's dependency restore state the way the controller would.
+func (e *env) setDeps(t *testing.T, ws *sbxv1.Workspace, profile, reason string) {
+	t.Helper()
+	cur := &sbxv1.Workspace{}
+	if err := k8s.Get(context.Background(), client.ObjectKeyFromObject(ws), cur); err != nil {
+		t.Fatal(err)
+	}
+	cur.Status.Deps = &sbxv1.DepsStatus{Profile: profile}
+	st := metav1.ConditionFalse
+	if reason == sbxv1.DepsReasonReady {
+		st = metav1.ConditionTrue
+	}
+	meta.SetStatusCondition(&cur.Status.Conditions, metav1.Condition{Type: sbxv1.ConditionDepsReady, Status: st, Reason: reason, Message: reason})
+	if err := k8s.Status().Update(context.Background(), cur); err != nil {
+		t.Fatal(err)
+	}
+	e.srv.Notify(client.ObjectKeyFromObject(ws).String())
+}
+
+func shell(script string) sbxapi.ExecRequest {
+	return sbxapi.ExecRequest{Command: []string{"sh", "-c", script}}
+}
+
+func TestOnlyCommandsThatNeedDependenciesWait(t *testing.T) {
+	e := start(t, gateway.Config{}, 0)
+	ws, own := e.workspace(t, "deps", sbxv1.PhaseRunning, "")
+	e.setDeps(t, ws, "npm", sbxv1.DepsReasonRestoring)
+
+	if out, err := own.Exec(ctx(t), e.ns, "deps", shell("ls")); err != nil || out.DepsWaitedMillis != 0 {
+		t.Fatalf("ls during the restore: %+v, %v; want it to run at once", out, err)
+	}
+	optOut := shell("echo node")
+	optOut.WaitFor = []string{"none"}
+	if out, err := own.Exec(ctx(t), e.ns, "deps", optOut); err != nil || out.DepsWaitedMillis != 0 {
+		t.Fatalf(`waitFor "none": %+v, %v`, out, err)
+	}
+
+	held := make(chan *sbxapi.ExecResponse, 2)
+	for _, req := range []sbxapi.ExecRequest{
+		shell("echo node"), // inferred: it names node
+		{Command: []string{"echo", "forced"}, WaitFor: []string{"deps"}},
+	} {
+		go func() {
+			out, err := own.Exec(context.Background(), e.ns, "deps", req)
+			if err != nil {
+				t.Errorf("held command: %v", err)
+			}
+			held <- out
+		}()
+	}
+	select {
+	case out := <-held:
+		t.Fatalf("a command that needs dependencies ran during the restore: %+v", out)
+	case <-time.After(300 * time.Millisecond):
+	}
+	e.setDeps(t, ws, "npm", sbxv1.DepsReasonReady)
+	for range 2 {
+		select {
+		case out := <-held:
+			if out == nil || out.DepsWaitedMillis < 250 {
+				t.Errorf("held command: %+v; want it to report the wait", out)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("held commands weren't released when the restore finished")
+		}
+	}
+	if w, err := own.Get(ctx(t), e.ns, "deps"); err != nil || w.Deps == nil || w.Deps.Pending || !w.Deps.Ready || w.Deps.Profile != "npm" {
+		t.Errorf("view deps = %+v, %v", w.Deps, err)
+	}
+}
+
+func TestFailedDependenciesDontHoldCommands(t *testing.T) {
+	e := start(t, gateway.Config{}, 0)
+	ws, own := e.workspace(t, "deps", sbxv1.PhaseRunning, "")
+	e.setDeps(t, ws, "npm", sbxv1.DepsReasonFailed)
+	if out, err := own.Exec(ctx(t), e.ns, "deps", shell("echo npm")); err != nil || out.DepsWaitedMillis != 0 {
+		t.Fatalf("after a failed restore: %+v, %v; want it to run and report its own error", out, err)
+	}
+}
+
+func TestDependencyWaitTimesOut(t *testing.T) {
+	e := start(t, gateway.Config{DepsTimeout: 200 * time.Millisecond}, 0)
+	ws, own := e.workspace(t, "deps", sbxv1.PhaseRunning, "")
+	e.setDeps(t, ws, "pip", sbxv1.DepsReasonInstalling)
+	_, err := own.Exec(ctx(t), e.ns, "deps", shell("pytest -q"))
+	var se *sbxapi.StatusError
+	if !errors.As(err, &se) || se.Status != http.StatusGatewayTimeout || se.Body.Code != sbxapi.CodeDepsTimeout {
+		t.Fatalf("err = %v, want 504 deps_timeout", err)
+	}
+}
+
+func TestServicesAPI(t *testing.T) {
+	e := start(t, gateway.Config{}, -1)
+	ws, own := e.workspace(t, "svc", sbxv1.PhaseRunning, "")
+	if err := own.PutService(ctx(t), e.ns, "svc", sbxapi.Service{Name: "web", Command: []string{"sleep", "30"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := own.PutService(ctx(t), e.ns, "svc", sbxapi.Service{Name: "Bad Name", Command: []string{"true"}}); statusOf(err) != http.StatusBadRequest {
+		t.Errorf("invalid name: %v, want 400", err)
+	}
+	cur := &sbxv1.Workspace{}
+	if err := k8s.Get(ctx(t), client.ObjectKeyFromObject(ws), cur); err != nil {
+		t.Fatal(err)
+	}
+	if len(cur.Spec.Services) != 1 || cur.Spec.Services[0].Name != "web" || !cur.Spec.Services[0].WaitsForDeps() {
+		t.Fatalf("spec.services = %+v", cur.Spec.Services)
+	}
+
+	// The controller would start it; here we start it in the agent ourselves.
+	actx := metadata.AppendToOutgoingContext(ctx(t), "authorization", "Bearer "+agentToken)
+	if _, err := agentClient.StartService(actx, &agentv1.StartServiceRequest{Service: &agentv1.Service{Name: "web", Command: []string{"sleep", "30"}}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = agentClient.StopService(actx, &agentv1.StopServiceRequest{Name: "web"}) })
+	list, err := own.Services(ctx(t), e.ns, "svc")
+	if err != nil || len(list) != 1 || !list[0].Running || list[0].Pid == 0 {
+		t.Fatalf("services = %+v, %v; want web running", list, err)
+	}
+
+	if err := own.DeleteService(ctx(t), e.ns, "svc", "web"); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := own.Services(ctx(t), e.ns, "svc"); err != nil || len(list) != 0 {
+		t.Fatalf("after delete: %+v, %v", list, err)
+	}
+
+	// Reading services of a sleeping workspace doesn't wake it.
+	sleeping, sown := e.workspace(t, "asleep", sbxv1.PhaseSuspended, "")
+	if _, err := sown.Services(ctx(t), e.ns, "asleep"); err != nil {
+		t.Fatal(err)
+	}
+	if e.seq(t, sleeping) != 0 {
+		t.Fatal("listing services woke the workspace")
 	}
 }
