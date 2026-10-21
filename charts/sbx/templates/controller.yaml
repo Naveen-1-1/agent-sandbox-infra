@@ -70,6 +70,7 @@ spec:
             - {name: SBX_SNAPSHOT_EXCLUDE, value: {{ join "," .Values.workspace.snapshot.exclude | quote }}}
             - {name: SBX_SNAPSHOT_MAX_FILE_BYTES, value: {{ int64 .Values.workspace.snapshot.maxFileBytes | quote }}}
             - {name: SBX_SNAPSHOT_MAX_NEW_BYTES, value: {{ int64 .Values.workspace.snapshot.maxNewBytes | quote }}}
+            - {name: SBX_MAX_DEPS_BYTES, value: {{ int64 .Values.workspace.deps.maxArchiveBytes | quote }}}
           ports:
             - {name: broker, containerPort: {{ .Values.controller.brokerPort }}}
             - {name: metrics, containerPort: {{ .Values.controller.metricsPort }}}

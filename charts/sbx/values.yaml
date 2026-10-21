@@ -100,6 +100,11 @@ workspace:
     exclude: [node_modules, .venv]
     maxFileBytes: 52428800 # 50 MiB
     maxNewBytes: 524288000 # 500 MiB
+  # Dependency directories (node_modules, .venv) are restored from a shared
+  # cache keyed by lockfile, image digest and arch, or installed on a miss.
+  deps:
+    maxArchiveBytes: 2147483648 # 2 GiB; larger installs aren't cached
+    waitTimeout: 15m # how long a command that needs them may wait
 
 # Test-only git server for e2e tests and the demo.
 fixtures:
