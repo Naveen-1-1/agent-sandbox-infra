@@ -184,6 +184,30 @@ fleet costs per hour at the list prices under `pricing:` in `charts/sbx/values.y
 `metrics.serviceMonitors` and `metrics.dashboards` install just the ServiceMonitors and
 dashboards.
 
+## On AWS (the `aws` branch)
+
+The same platform on EKS. It uses Graviton nodes in public subnets, with no NAT gateway and no
+load balancer. Real S3 is reached through EKS Pod Identity, so no keys are stored anywhere, and
+images come from ECR. `infra/terraform` creates it all, tagged `project=sbx` and `run=<run>`.
+Terraform state stays in the checkout, git-ignored. You need the AWS CLI signed in
+(`aws login`, SSO or a profile), terraform and docker.
+
+```bash
+make aws-plan                     # the plan and its hourly cost (~$0.29/h with 2 on-demand nodes); changes nothing
+make aws-up APPROVED=yes          # ~20 min: network, cluster, nodes, bucket, images, platform
+make aws-bench                    # the benchmark on EKS: notes/bench-aws-<date>.json
+make aws-down-plan                # the teardown plan; changes nothing
+make aws-down APPROVED=yes        # deletes workspaces, uninstalls, destroys, then checks nothing is left
+make aws-cost-actual FROM=<date>  # the next day: what Cost Explorer billed the run
+make cost-report COST_ARGS="--actual notes/aws-cost-<run>.json --modeled notes/aws-modeled-<run>.json"
+```
+
+`AWS_NODES=3` and `AWS_CAPACITY=SPOT` change the nodes. To reach the platform, use a port-forward
+with `bin/kubeconfig-aws`. For the gateway and editors (`*.sbx.localhost:8080`):
+`kubectl --kubeconfig bin/kubeconfig-aws -n sbx-system port-forward svc/sbx-gateway 8080:80`.
+Grafana is on `svc/sbx-grafana`. `make aws-verify RUN=<run>` checks again that nothing of a run
+is left: instances, NAT gateways, load balancers, disks, images, the cluster and the bucket.
+
 ## Development
 
 | Command | What it does |

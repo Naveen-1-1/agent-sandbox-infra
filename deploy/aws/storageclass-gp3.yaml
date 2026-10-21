@@ -1,0 +1,14 @@
+# Workspace disks on EKS: encrypted gp3 volumes from the EBS CSI driver,
+# made in the zone where the pod lands and deleted with their claim. The
+# driver adds the run's tags (see infra/terraform/eks.tf).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  encrypted: "true"

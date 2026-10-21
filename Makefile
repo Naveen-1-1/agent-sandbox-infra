@@ -166,12 +166,14 @@ charts/sbx/charts/.deps: $(CHART_DEPS)
 	helm dependency build --skip-refresh charts/sbx >/dev/null
 	@touch $@
 
+DEPLOY_ARGS ?=
+
 .PHONY: deploy
-deploy: push charts/sbx/charts/.deps ## Build, push and install the platform (VALUES=deploy/values/kind.yaml).
+deploy: push charts/sbx/charts/.deps ## Build, push and install the platform (VALUES=deploy/values/kind.yaml, DEPLOY_ARGS for more helm flags).
 	@# Helm installs CRDs only on a first install; apply every chart's on each deploy.
 	helm show crds charts/sbx | kubectl apply --server-side --force-conflicts -f - >/dev/null
 	helm upgrade --install sbx charts/sbx --namespace $(NAMESPACE) --create-namespace \
-	  -f $(VALUES) --set images.registry=$(REGISTRY) --set images.tag=$(TAG) --wait --timeout 8m
+	  -f $(VALUES) --set images.registry=$(REGISTRY) --set images.tag=$(TAG) $(DEPLOY_ARGS) --wait --timeout 8m
 
 .PHONY: grafana
 grafana: ## Open Grafana with the sbx dashboards on http://127.0.0.1:3000 (anonymous viewer on kind).
@@ -233,3 +235,6 @@ ui: ## Print a link that opens the web UI signed in as admin (run `make kind-up 
 	@$(GO) build -o bin/sbxctl ./cmd/sbxctl
 	@SBX_TOKEN=$$(kubectl -n $(NAMESPACE) get secret sbx-gateway-admin -o jsonpath='{.data.token}' | base64 -d) \
 	  bin/sbxctl ui
+
+# The AWS environment (aws branch).
+include aws.mk

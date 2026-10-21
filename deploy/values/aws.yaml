@@ -1,0 +1,41 @@
+# AWS (EKS): real S3 through EKS Pod Identity, gp3 disks, images from ECR.
+# make aws-up passes images.registry, s3.bucket, s3.region and
+# workspace.tools from the Terraform outputs and its preflight check.
+s3local:
+  enabled: false
+s3:
+  credentials: ambient # Pod Identity: no keys anywhere
+  endpoint: "" # AWS S3 in s3.region
+  pathStyle: false
+  createBucket: false # Terraform makes it
+fixtures:
+  enabled: false
+repositories:
+  allowPrivateHosts: false
+workspace:
+  storage:
+    storageClassName: gp3
+    size: 10Gi
+gateway:
+  # No load balancer: reach the gateway with kubectl port-forward. Browsers
+  # resolve *.localhost to loopback, so editors work through the same
+  # forward on port 8080.
+  service:
+    type: ClusterIP
+  domain: sbx.localhost
+  publicPort: 8080
+monitoring:
+  enabled: true
+  grafana:
+    grafana.ini:
+      auth.anonymous:
+        enabled: true # reached only through a port-forward
+        org_role: Viewer
+# On-demand EC2 prices that add up to one m7g.large (2 vCPU and 8 GiB for
+# $0.0816/h), so the cost metrics price workspaces like the nodes they use.
+pricing:
+  cpuCoreHour: 0.0272
+  memoryGiBHour: 0.0034
+  diskGiBMonth: 0.08
+  objectGiBMonth: 0.023
+  storageUsageInterval: 5m
