@@ -64,6 +64,25 @@ bin/sbxctl list
 `create` prints a token scoped to that one workspace. An agent harness uses it in place of
 the admin token.
 
+### Sleep policy
+
+Workspaces go to sleep on their own. The chart's default policy, `fixed`, suspends after
+10 minutes without activity, or 2 minutes after the agent ends its turn
+(`sbxctl turn-ended`). A running command keeps the workspace awake. `sbxctl list` shows
+each verdict, and `sbxctl get` explains it.
+
+```bash
+# One workspace with its own policy:
+bin/sbxctl create --repo http://sbx-fixtures.sbx-system.svc/hello-node.git \
+  --policy fixed --param idleTimeout=1m --param afterTurnEnded=10s
+# Change the cluster policy at runtime (takes effect at once; survives upgrades):
+kubectl -n sbx-system create configmap sbx-policy --from-literal=policy.yaml='name: fixed
+params: {idleTimeout: 5m}'
+```
+
+The chart's defaults are under `policy:` in `charts/sbx/values.yaml`. A broken
+`sbx-policy` is reported as an Event on the ConfigMap and ignored.
+
 ## Development
 
 | Command | What it does |

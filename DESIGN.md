@@ -80,6 +80,7 @@ Pending ─► Provisioning ─► Running ─► Suspending ─► TearingDown 
                               └───────────────────────────────────────────────────────────────┘
 ```
 
+- **Running** asks the sleep policy (below) when to suspend.
 - **Provisioning** pins the base commit (`git ls-remote`), sets epoch 1, and creates the
   token Secret, the protected disk and the Sandbox.
 - **Suspending** runs these steps. Freeze (with a lease) → snapshot in the sidecar →
@@ -101,8 +102,50 @@ Tests run upstream's real Sandbox controller with a fake kubelet. One test crash
 controller after each of the 28 side effects of a create/suspend/wake cycle and checks:
 no disk is deleted before its snapshot is committed, there is exactly one wake, the
 manifest matches status, and only one disk exists at a time. Metrics cover workspaces per
-phase, time in each phase, wake latency to files-ready and serving, restore bytes, and wake
-and suspend counts.
+phase, time in each phase, wake latency to files-ready and serving, restore bytes, wake
+and suspend counts, policy verdicts, and wakes and suspends running or waiting for a slot.
+
+### Sleep policy (`internal/policy`, `internal/controller/sleep`)
+
+A policy is a pure function: given what is known about a workspace and the time, it says
+"suspend now", or "keep it up, ask again at T, and here's why". Policies register by name
+and take string parameters, so choosing one is configuration. Two ship:
+
+- **`fixed`** suspends after `idleTimeout` (10m) with no activity, or `afterTurnEnded` (2m)
+  after the agent ends its turn if nothing happens since. A running exec or terminal
+  command, an open exec or app connection, or a request held at the gateway keeps the
+  workspace up. An open editor tab does not.
+- **`never`** suspends only when asked.
+
+The controller merges the signals before each decision:
+
+- the agent's activity, running commands and open streams (`GetSignals`);
+- every gateway replica's turns, held requests and streams;
+- the last wake or aborted suspend from status.
+
+A collector polls all gateway replicas every 5s, finding them through the EndpointSlices of
+their headless Service. A replica that doesn't answer makes the signals *unknown*, and a
+policy never suspends on unknown signals. A turn ending re-decides that workspace at once.
+The verdict is written to `status.sleep` (reason, message, `suspendAt`) only when it
+changes, and stays there after a suspend to say why.
+
+The cluster policy lives in the `sbx-policy` ConfigMap, written at runtime (the settings
+page). It falls back to the chart's `sbx-policy-defaults`, then to `never`. A change
+re-decides every running workspace straight away. A config that fails to parse is reported
+as a Warning Event on the ConfigMap, and the last good policy stays in force. A workspace can
+override the cluster with `spec.policy`. Mode `AlwaysOn` never suspends, and mode `Off` or
+an explicit suspend request always does.
+
+### Operation limiter (`internal/controller/ops`)
+
+A storm of wakes or suspends must not overwhelm the nodes or S3. At most `maxConcurrent`
+wakes and suspends (8) run at once. The reconciler is level-triggered, so it never blocks:
+a workspace asks for a slot, and if none is free it is queued and asks again shortly.
+Free slots go to the most urgent waiter: a wake a request is held for, then a wake a hint
+predicted, then a suspend. A hinted wake moves up as soon as a gateway holds a request for
+it. `minSuspend` slots (2) stay open for suspends even while wakes wait, because suspends
+free capacity. Work in progress re-registers itself on every reconcile, so a new leader
+rebuilds the counts, and a slot nobody reports for a while is reclaimed.
 
 ### Workspace pod (`internal/controller/podspec`)
 
