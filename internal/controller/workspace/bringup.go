@@ -59,7 +59,7 @@ func (r *Reconciler) startProvisioning(ctx context.Context, ws *sbxv1.Workspace)
 	ws.Status.ObservedWakeSeq = ws.Spec.Wake.Seq
 	ws.Status.Wake = &sbxv1.WakeStatus{TargetEpoch: 1, Trigger: sbxv1.WakeTriggerAPI, StartedAt: now}
 	ws.Status.Volume = &sbxv1.VolumeStatus{ClaimName: claimName(ws, 1)}
-	ws.Status.Timeline = &sbxv1.WakeTimeline{Trigger: sbxv1.WakeTriggerAPI, RequestedAt: &now}
+	ws.Status.Timeline = &sbxv1.WakeTimeline{Trigger: sbxv1.WakeTriggerAPI, RequestedAt: &metav1.MicroTime{Time: now.Time}}
 	setCondition(ws, sbxv1.ConditionReady, metav1.ConditionFalse, "Provisioning", "creating the first pod and disk")
 	return r.save(ctx, ws, r.setPhase(ws, sbxv1.PhaseProvisioning))
 }
@@ -138,13 +138,13 @@ func (r *Reconciler) bringUp(ctx context.Context, ws *sbxv1.Workspace) (reconcil
 		ws.Status.Timeline = tl
 	}
 	if c := podCondition(pod, corev1.PodScheduled); c != nil {
-		tl.PodScheduledAt = &c.LastTransitionTime
+		tl.PodScheduledAt = &metav1.MicroTime{Time: c.LastTransitionTime.Time}
 	}
 	filesAt, restored := r.filesReady(ctx, ws, pod, target)
 	if !filesAt.IsZero() {
-		tl.FilesReadyAt = &metav1.Time{Time: filesAt}
+		tl.FilesReadyAt = &metav1.MicroTime{Time: filesAt}
 	}
-	tl.ReadyAt = &metav1.Time{Time: now}
+	tl.ReadyAt = &metav1.MicroTime{Time: now}
 
 	trigger := ws.Status.Wake.Trigger
 	ws.Status.Pod = &sbxv1.PodStatus{Name: pod.Name, UID: pod.UID, IP: pod.Status.PodIP, NodeName: pod.Spec.NodeName}

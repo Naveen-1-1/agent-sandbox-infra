@@ -336,7 +336,7 @@ func (r *Reconciler) startWake(ws *sbxv1.Workspace, trigger sbxv1.WakeTrigger) {
 	ws.Status.ObservedWakeSeq = ws.Spec.Wake.Seq
 	ws.Status.Wake = &sbxv1.WakeStatus{TargetEpoch: target, RestoreSeq: restore, Trigger: trigger, StartedAt: now}
 	ws.Status.Volume = &sbxv1.VolumeStatus{ClaimName: claimName(ws, target)}
-	ws.Status.Timeline = &sbxv1.WakeTimeline{Trigger: trigger, RequestedAt: &requested}
+	ws.Status.Timeline = &sbxv1.WakeTimeline{Trigger: trigger, RequestedAt: &metav1.MicroTime{Time: requested.Time}}
 	ws.Status.Sleep = nil
 	setCondition(ws, sbxv1.ConditionReady, metav1.ConditionFalse, "Waking", fmt.Sprintf("restoring into epoch %d", target))
 }

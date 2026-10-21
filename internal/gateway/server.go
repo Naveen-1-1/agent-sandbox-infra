@@ -635,14 +635,22 @@ func View(ws *sbxv1.Workspace) sbxapi.Workspace {
 	}
 	if t := ws.Status.Timeline; t != nil {
 		v.Timeline = &sbxapi.Timeline{
-			Trigger: string(t.Trigger), RequestedAt: timePtr(t.RequestedAt),
-			FilesReadyAt: timePtr(t.FilesReadyAt), ReadyAt: timePtr(t.ReadyAt), DepsReadyAt: timePtr(t.DepsReadyAt),
+			Trigger: string(t.Trigger), RequestedAt: microPtr(t.RequestedAt), PodScheduledAt: microPtr(t.PodScheduledAt),
+			FilesReadyAt: microPtr(t.FilesReadyAt), ReadyAt: microPtr(t.ReadyAt), DepsReadyAt: microPtr(t.DepsReadyAt),
 		}
 	}
 	return v
 }
 
 func timePtr(t *metav1.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	tt := t.Time
+	return &tt
+}
+
+func microPtr(t *metav1.MicroTime) *time.Time {
 	if t == nil {
 		return nil
 	}

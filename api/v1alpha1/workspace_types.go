@@ -387,18 +387,20 @@ type SnapshotRef struct {
 	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
 }
 
-// WakeTimeline records when each stage of the last wake finished.
+// WakeTimeline records when each stage of the last wake finished. Times
+// have microsecond precision: wake stages are seconds apart, so whole
+// seconds would hide most of what they measure.
 type WakeTimeline struct {
 	// +optional
 	Trigger WakeTrigger `json:"trigger,omitempty"`
 	// +optional
-	RequestedAt *metav1.Time `json:"requestedAt,omitempty"`
+	RequestedAt *metav1.MicroTime `json:"requestedAt,omitempty"`
 	// +optional
-	PodScheduledAt *metav1.Time `json:"podScheduledAt,omitempty"`
+	PodScheduledAt *metav1.MicroTime `json:"podScheduledAt,omitempty"`
 	// +optional
-	FilesReadyAt *metav1.Time `json:"filesReadyAt,omitempty"`
+	FilesReadyAt *metav1.MicroTime `json:"filesReadyAt,omitempty"`
 	// +optional
-	ReadyAt *metav1.Time `json:"readyAt,omitempty"`
+	ReadyAt *metav1.MicroTime `json:"readyAt,omitempty"`
 	// +optional
-	DepsReadyAt *metav1.Time `json:"depsReadyAt,omitempty"`
+	DepsReadyAt *metav1.MicroTime `json:"depsReadyAt,omitempty"`
 }

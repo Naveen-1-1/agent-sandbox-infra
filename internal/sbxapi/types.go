@@ -74,11 +74,12 @@ type Snapshot struct {
 
 // Timeline is when each stage of the last wake finished.
 type Timeline struct {
-	Trigger      string     `json:"trigger,omitempty"`
-	RequestedAt  *time.Time `json:"requestedAt,omitempty"`
-	FilesReadyAt *time.Time `json:"filesReadyAt,omitempty"`
-	ReadyAt      *time.Time `json:"readyAt,omitempty"`
-	DepsReadyAt  *time.Time `json:"depsReadyAt,omitempty"`
+	Trigger        string     `json:"trigger,omitempty"`
+	RequestedAt    *time.Time `json:"requestedAt,omitempty"`
+	PodScheduledAt *time.Time `json:"podScheduledAt,omitempty"`
+	FilesReadyAt   *time.Time `json:"filesReadyAt,omitempty"`
+	ReadyAt        *time.Time `json:"readyAt,omitempty"`
+	DepsReadyAt    *time.Time `json:"depsReadyAt,omitempty"`
 }
 
 // CreateRequest creates a workspace from a git repository.
