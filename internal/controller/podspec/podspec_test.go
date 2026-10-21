@@ -88,10 +88,10 @@ func TestContainerOrderAndSecrets(t *testing.T) {
 	for _, c := range spec.InitContainers {
 		names = append(names, c.Name)
 	}
-	if fmt.Sprint(names) != fmt.Sprint([]string{podspec.ContainerTools, podspec.ContainerRestore, podspec.ContainerSidecar}) {
+	if fmt.Sprint(names) != fmt.Sprint([]string{podspec.ContainerRestore, podspec.ContainerSidecar}) {
 		t.Errorf("init order = %v", names)
 	}
-	if rp := spec.InitContainers[2].RestartPolicy; rp == nil || *rp != corev1.ContainerRestartPolicyAlways {
+	if rp := spec.InitContainers[1].RestartPolicy; rp == nil || *rp != corev1.ContainerRestartPolicyAlways {
 		t.Error("sbx-sidecar is not a native sidecar")
 	}
 	for _, m := range spec.Containers[0].VolumeMounts {
@@ -107,6 +107,53 @@ func TestContainerOrderAndSecrets(t *testing.T) {
 	}
 }
 
+func TestToolsComeFromTheImageOrACopy(t *testing.T) {
+	tools := func(spec corev1.PodSpec) (*corev1.Volume, corev1.VolumeMount) {
+		var vol *corev1.Volume
+		for i := range spec.Volumes {
+			if spec.Volumes[i].Name == podspec.VolumeTools {
+				vol = &spec.Volumes[i]
+			}
+		}
+		for _, m := range spec.Containers[0].VolumeMounts {
+			if m.Name == podspec.VolumeTools {
+				return vol, m
+			}
+		}
+		t.Fatal("the workload doesn't mount the tools")
+		return nil, corev1.VolumeMount{}
+	}
+
+	tmpl, err := podspec.Build(input())
+	if err != nil {
+		t.Fatal(err)
+	}
+	vol, mount := tools(tmpl.Spec)
+	if vol.Image == nil || vol.Image.Reference != "localhost:5001/sbx-runtime:dev" || mount.SubPath != "sbx" || !mount.ReadOnly {
+		t.Fatalf("image mode: volume %+v mount %+v; want /sbx from the runtime image, read-only", vol.VolumeSource, mount)
+	}
+	if tmpl.Spec.InitContainers[0].Name == podspec.ContainerTools {
+		t.Error("image mode still copies the tools")
+	}
+
+	in := input()
+	in.Tools = podspec.ToolsCopy
+	tmpl, err = podspec.Build(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vol, mount = tools(tmpl.Spec)
+	first := tmpl.Spec.InitContainers[0]
+	if vol.EmptyDir == nil || first.Name != podspec.ContainerTools || first.Args[1] != "/tools/sbx" || mount.SubPath != "sbx" {
+		t.Fatalf("copy mode: volume %+v, first init container %s %v", vol.VolumeSource, first.Name, first.Args)
+	}
+
+	in.Tools = "rsync"
+	if _, err := podspec.Build(in); err == nil {
+		t.Error("an unknown tools mode was accepted")
+	}
+}
+
 func TestMissingInputsRejected(t *testing.T) {
 	in := input()
 	in.TokenSecret, in.Epoch = "", 0
@@ -118,20 +165,24 @@ func TestMissingInputsRejected(t *testing.T) {
 // TestAcceptedByAgentSandbox submits the template inside a real upstream
 // Sandbox, so schema or CEL changes upstream break this test, not a wake.
 func TestAcceptedByAgentSandbox(t *testing.T) {
-	tmpl, err := podspec.Build(input())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	sb := &sbv1.Sandbox{
-		ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "default"},
-		Spec: sbv1.SandboxSpec{
-			SandboxBlueprint: sbv1.SandboxBlueprint{PodTemplate: tmpl, Service: ptr.To(false)},
-			OperatingMode:    sbv1.SandboxOperatingModeRunning,
-		},
-	}
-	if err := env.Client.Create(ctx, sb); err != nil {
-		t.Fatalf("upstream rejected the pod template: %v", err)
+	for _, mode := range []podspec.ToolsMode{podspec.ToolsImage, podspec.ToolsCopy} {
+		in := input()
+		in.Tools = mode
+		tmpl, err := podspec.Build(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		sb := &sbv1.Sandbox{
+			ObjectMeta: metav1.ObjectMeta{Name: "demo-" + string(mode), Namespace: "default"},
+			Spec: sbv1.SandboxSpec{
+				SandboxBlueprint: sbv1.SandboxBlueprint{PodTemplate: tmpl, Service: ptr.To(false)},
+				OperatingMode:    sbv1.SandboxOperatingModeRunning,
+			},
+		}
+		if err := env.Client.Create(ctx, sb); err != nil {
+			t.Fatalf("upstream rejected the %s-mode pod template: %v", mode, err)
+		}
 	}
 }

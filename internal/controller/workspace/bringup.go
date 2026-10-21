@@ -250,7 +250,7 @@ func (r *Reconciler) template(ws *sbxv1.Workspace, epoch int64) (sbv1.PodTemplat
 	c := r.Config
 	return podspec.Build(podspec.Input{
 		Workspace: ws, Epoch: epoch, ClaimName: claimName(ws, epoch),
-		Image: ws.Status.ResolvedImage, RuntimeImage: c.RuntimeImage, PullPolicy: c.PullPolicy,
+		Image: ws.Status.ResolvedImage, RuntimeImage: c.RuntimeImage, Tools: c.Tools, PullPolicy: c.PullPolicy,
 		ImagePullSecrets: c.ImagePullSecrets, TokenSecret: secretName(ws, epoch),
 		AgentTokenSHA256: hex.EncodeToString(token.SHA256(r.Keys.Derive(token.Agent, string(ws.UID), epoch))),
 		BrokerAddr:       c.BrokerAddr, Resources: c.Resources, RunAsUser: c.RunAsUser, RunAsGroup: c.RunAsGroup,

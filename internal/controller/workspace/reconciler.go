@@ -57,6 +57,7 @@ const (
 // Config is how workspace pods are built and how patient the controller is.
 type Config struct {
 	RuntimeImage     string
+	Tools            podspec.ToolsMode
 	BrokerAddr       string
 	DefaultImage     string
 	PullPolicy       corev1.PullPolicy

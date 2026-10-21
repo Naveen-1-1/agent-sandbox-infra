@@ -100,6 +100,11 @@ workspace:
     exclude: [node_modules, .venv]
     maxFileBytes: 52428800 # 50 MiB
     maxNewBytes: 524288000 # 500 MiB
+  # How the workspace container gets the agent and editor: "image" mounts
+  # them read-only from the runtime image (an image volume, Kubernetes 1.35+,
+  # or 1.33+ with the ImageVolume feature gate); "copy" copies them into
+  # every pod, which works anywhere but adds the editor's size to each wake.
+  tools: image
   # Dependency directories (node_modules, .venv) are restored from a shared
   # cache keyed by lockfile, image digest and arch, or installed on a miss.
   deps:

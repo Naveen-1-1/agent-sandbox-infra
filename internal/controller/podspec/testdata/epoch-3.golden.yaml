@@ -45,29 +45,10 @@ spec:
     - mountPath: /sbx
       name: sbx-tools
       readOnly: true
+      subPath: sbx
     workingDir: /workspace
   enableServiceLinks: false
   initContainers:
-  - args:
-    - install-tools
-    - /tools
-    image: localhost:5001/sbx-runtime:dev
-    imagePullPolicy: IfNotPresent
-    name: sbx-tools
-    resources:
-      limits:
-        memory: 1Gi
-      requests:
-        cpu: 50m
-        memory: 64Mi
-    securityContext:
-      allowPrivilegeEscalation: false
-      capabilities:
-        drop:
-        - ALL
-    volumeMounts:
-    - mountPath: /tools
-      name: sbx-tools
   - args:
     - restore
     env:
@@ -188,7 +169,9 @@ spec:
   - name: workspace
     persistentVolumeClaim:
       claimName: ws-demo-e3
-  - emptyDir: {}
+  - image:
+      pullPolicy: IfNotPresent
+      reference: localhost:5001/sbx-runtime:dev
     name: sbx-tools
   - emptyDir: {}
     name: sbx-scratch

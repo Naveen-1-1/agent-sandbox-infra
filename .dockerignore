@@ -1,5 +1,8 @@
-# Images are built from prebuilt binaries and fixtures only.
+# Images are built from prebuilt binaries, the built editor extension and
+# fixtures only.
 *
 !bin/linux_*/
 !test/fixtures/
 !images/
+!extensions/vscode-activity/package.json
+!extensions/vscode-activity/dist/

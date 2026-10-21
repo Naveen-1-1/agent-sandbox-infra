@@ -69,6 +69,20 @@ func Tokens(keys token.Keyring, workspaceUID string, epoch int64) map[string]str
 	}
 }
 
+// ToolsMode is how the workload container gets /sbx: the agent it runs as
+// PID 1, and the editor.
+type ToolsMode string
+
+const (
+	// ToolsImage mounts /sbx from the runtime image, read-only, as an image
+	// volume: nothing is copied, so the editor costs a wake nothing. It
+	// needs Kubernetes 1.35 (or 1.33 with the ImageVolume feature gate).
+	ToolsImage ToolsMode = "image"
+	// ToolsCopy copies /sbx into the pod with an init container, for
+	// clusters without image volumes. Every wake then copies the editor too.
+	ToolsCopy ToolsMode = "copy"
+)
+
 // Snapshot limits and exclusions passed to the sidecar.
 type Snapshot struct {
 	Exclude        []string
@@ -87,8 +101,10 @@ type Input struct {
 	ClaimName string
 	// Image is the workload image (from devcontainer.json or the default).
 	Image string
-	// RuntimeImage carries sbx-sidecar, sbx-agent and git.
-	RuntimeImage     string
+	// RuntimeImage carries sbx-sidecar, sbx-agent, git and the editor.
+	RuntimeImage string
+	// Tools says how the workload gets /sbx (default ToolsImage).
+	Tools            ToolsMode
 	PullPolicy       corev1.PullPolicy
 	ImagePullSecrets []corev1.LocalObjectReference
 	// TokenSecret holds this epoch's broker and sidecar tokens.
@@ -163,13 +179,6 @@ func Build(in Input) (sbv1.PodTemplate, error) {
 		},
 		InitContainers: []corev1.Container{
 			{
-				Name: ContainerTools, Image: in.RuntimeImage, ImagePullPolicy: in.PullPolicy,
-				Args:            []string{"install-tools", "/tools"},
-				VolumeMounts:    []corev1.VolumeMount{{Name: VolumeTools, MountPath: "/tools"}},
-				Resources:       small,
-				SecurityContext: hardened,
-			},
-			{
 				Name: ContainerRestore, Image: in.RuntimeImage, ImagePullPolicy: in.PullPolicy,
 				Args: []string{"restore"}, Env: common, VolumeMounts: ours,
 				Resources: small, SecurityContext: hardened,
@@ -213,7 +222,7 @@ func Build(in Input) (sbv1.PodTemplate, error) {
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: VolumeWorkspace, MountPath: WorkspaceDir},
-				{Name: VolumeTools, MountPath: ToolsDir, ReadOnly: true},
+				{Name: VolumeTools, MountPath: ToolsDir, SubPath: "sbx", ReadOnly: true},
 			},
 			Resources: in.Resources,
 		}},
@@ -221,7 +230,9 @@ func Build(in Input) (sbv1.PodTemplate, error) {
 			{Name: VolumeWorkspace, VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: in.ClaimName},
 			}},
-			{Name: VolumeTools, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			{Name: VolumeTools, VolumeSource: corev1.VolumeSource{Image: &corev1.ImageVolumeSource{
+				Reference: in.RuntimeImage, PullPolicy: in.PullPolicy,
+			}}},
 			{Name: VolumeScratch, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 			{Name: VolumeTokens, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
 				SecretName:  in.TokenSecret,
@@ -233,6 +244,20 @@ func Build(in Input) (sbv1.PodTemplate, error) {
 				},
 			}}},
 		},
+	}
+	if in.Tools == ToolsCopy {
+		spec.InitContainers = append([]corev1.Container{{
+			Name: ContainerTools, Image: in.RuntimeImage, ImagePullPolicy: in.PullPolicy,
+			Args:            []string{"install-tools", "/tools/sbx"},
+			VolumeMounts:    []corev1.VolumeMount{{Name: VolumeTools, MountPath: "/tools"}},
+			Resources:       small,
+			SecurityContext: hardened,
+		}}, spec.InitContainers...)
+		for i := range spec.Volumes {
+			if spec.Volumes[i].Name == VolumeTools {
+				spec.Volumes[i].VolumeSource = corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}
+			}
+		}
 	}
 	return sbv1.PodTemplate{
 		ObjectMeta: sbv1.PodMetadata{Labels: map[string]string{LabelWorkspace: ws.Name, LabelEpoch: epoch}},
@@ -255,6 +280,9 @@ func validate(in Input) error {
 	}
 	if in.Epoch < 1 {
 		missing = append(missing, "Epoch >= 1")
+	}
+	if in.Tools != "" && in.Tools != ToolsImage && in.Tools != ToolsCopy {
+		return fmt.Errorf("podspec: unknown tools mode %q", in.Tools)
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("podspec: missing %s", strings.Join(missing, ", "))

@@ -38,6 +38,7 @@ import (
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/broker"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/ops"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/podspec"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/sleep"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/workspace"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
@@ -82,6 +83,7 @@ func main() {
 
 	flag.StringVar(&o.ws.RuntimeImage, "runtime-image", os.Getenv("SBX_RUNTIME_IMAGE"), "sbx-runtime image for workspace pods")
 	flag.StringVar(&o.ws.BrokerAddr, "pod-broker-addr", os.Getenv("SBX_BROKER_ADDR"), "broker address as workspace pods reach it")
+	flag.StringVar((*string)(&o.ws.Tools), "tools", envOr("SBX_TOOLS_MODE", string(podspec.ToolsImage)), `how workspaces get the agent and editor: "image" (an image volume, Kubernetes 1.35+) or "copy"`)
 	flag.StringVar(&o.ws.DefaultImage, "default-image", envOr("SBX_DEFAULT_IMAGE", "mcr.microsoft.com/devcontainers/base:trixie"), "workload image when none is chosen")
 	flag.Int64Var(&o.ws.RunAsUser, "run-as-user", envInt("SBX_RUN_AS_USER", 1000), "UID for workspace containers")
 	flag.Int64Var(&o.ws.RunAsGroup, "run-as-group", envInt("SBX_RUN_AS_GROUP", 1000), "GID for workspace containers")
