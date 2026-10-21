@@ -9,6 +9,7 @@ require (
 	github.com/aws/smithy-go v1.28.5
 	github.com/go-logr/logr v1.4.4
 	github.com/google/go-cmp v0.7.0
+	github.com/klauspost/compress v1.19.1
 	github.com/prometheus/client_golang v1.24.1
 	go.uber.org/goleak v1.3.0
 	golang.org/x/sync v0.24.0
