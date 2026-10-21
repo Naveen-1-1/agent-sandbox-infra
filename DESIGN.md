@@ -446,6 +446,38 @@ serving, dependencies), how long the command was held, the bundle size, the S3 r
 It writes `notes/bench-<env>-<date>.json`: every cycle, per-repository summaries (average and
 nearest-rank p95), and the averages the cost report runs on.
 
+### Cost report (`internal/costsim`, `cmd/sbx-costreport`, `make cost-report`)
+
+Prices sleep policies on real coding-agent sessions: the TraceLab v0.0.1 traces of Claude Code
+and Codex, 2,506 sessions once subagents are grouped under their parent by session id.
+
+1. **Export.** DuckDB writes one JSON line per raw session: its events, its tool calls with
+   start and end times, and its root session (`hack/costreport/export.sql`).
+2. **Timeline.** Each session group is rebuilt from timestamps:
+   - Sandbox calls (Bash, Read, Edit, exec_command, apply_patch, …) are busy spans.
+   - A person's input is the prompt that starts a user-initiated round, or an answer to a
+     question the agent asked.
+   - A turn ends at the agent's last action before the next prompt.
+   - Every instant is classed as tool running, AI thinking, human wait or session tail.
+3. **Replay.** A simulator runs the platform's real policy over the timeline, the same
+   `Decide` the controller calls. It feeds the policy what the gateway would see: calls starting
+   and ending, hints, turns ending.
+   - A suspend takes the bench's measured time and is billed awake.
+   - A call that finds the sandbox asleep waits for the wake, and the rest of the session moves
+     later by that much.
+   - With hints, every input starts the wake at once; the agent waits only if its first call
+     comes before the wake is done.
+4. **Prices.** Awake time, snapshot storage while asleep, and S3 requests per cycle are priced at
+   AWS list prices, with a sandbox at one m7g.large. Savings per session are scaled to the benched
+   sandbox's price and to 1M, 10M and 100M sessions a year.
+
+The report compares never sleeping, a 15-minute timeout without hints (the baseline), 15-, 5- and
+2-minute timeouts with hints, and an adaptive policy (a long timeout inside a turn, a short one
+after it). For each it gives cost, savings, visible waits, total wait and how many wakes the hint
+hid. It writes `notes/cost-report-<date>.md` and `.json`, with every assumption listed. Unit
+tests cover the gap classes, the grouping, the replay (hidden and visible wakes, aborted
+suspends, long-running calls) and the prices.
+
 ### Web UI (`web/`, embedded in the gateway)
 
 A React app that Vite builds into `internal/gateway/webui/dist`. The gateway embeds it and

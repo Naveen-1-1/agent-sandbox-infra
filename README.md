@@ -13,10 +13,11 @@ Built on [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agen
 ## Requirements
 
 - macOS or Linux with Docker (6 CPUs / 10 GB RAM recommended for the full stack)
-- Go ≥ 1.26, kind, helm, kubectl, node ≥ 24 (to build and test the web UI and the editor extension)
+- Go ≥ 1.26, kind, helm, kubectl, node ≥ 24 (to build and test the web UI and the editor extension),
+  and duckdb for the cost report
 
 ```bash
-brew install go kind helm kubectl node
+brew install go kind helm kubectl node duckdb
 ```
 
 Check everything with:
@@ -156,6 +157,18 @@ cycle, and the sidecar's and agent's CPU and memory. Use `BENCH_ARGS="--repos pl
 2"` for a quick run. The bench needs the cluster to itself and internet access for the
 repositories and package registries.
 
+### Cost report
+
+```bash
+make cost-report   # downloads TraceLab v0.0.1 (95 MiB) into data/ once; needs duckdb (brew install duckdb)
+```
+
+It replays 2,506 real Claude Code and Codex sessions against sleep policies, with the wake and
+suspend times from the latest `make bench`. It writes `notes/cost-report-<date>.md`: what never
+sleeping, a 15-minute timeout and shorter timeouts with wake-hints cost, how often each makes the
+agent wait, and how many wakes the hint hides. `COST_ARGS="--tail 1h"` changes how long a sandbox
+outlives its session; `sbx-costreport -h` lists the other knobs.
+
 ### Metrics and dashboards
 
 On kind, `make deploy` also installs Prometheus and Grafana:
@@ -182,6 +195,7 @@ dashboards.
 | `make test-e2e` | End-to-end tests against the deployed cluster (`RUN=<regex>`) |
 | `make demo` | Play an agent session against the deployed cluster |
 | `make bench` | Measure the platform on real repositories |
+| `make cost-report` | Price sleep policies on real agent sessions with the bench's numbers |
 | `make ui` | Print a signed-in link to the web UI |
 | `make grafana` | Open Grafana with the sbx dashboards |
 | `make gen` / `make verify-gen` | Regenerate CRDs and gRPC code / check they're current |
