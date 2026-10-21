@@ -45,7 +45,10 @@ Turns a workspace into a git bundle and back. A snapshot is two synthetic commit
 like `git stash`: one holds the working tree (tracked and untracked files, minus gitignored
 and excluded paths such as `.env`, keys and `node_modules`), the other holds the staging area.
 The bundle carries those commits plus every local branch and tag, minus anything the
-upstream base commit already has, so it contains only the agent's changes. Commits use a
+upstream base commit already has, so it contains only the agent's changes. Git leaves out
+of the bundle any ref that points into the base's history, such as `main` itself or a branch
+made without new commits. So the working-tree commit also records every ref by name and
+object, and restore recreates them all. Commits use a
 fixed author and the freeze time, so retrying a snapshot of the same state produces the same
 commit IDs. Snapshotting never writes to the user's `.git`: new objects go to a throwaway
 "shadow" repository that reads the user's objects through git alternates. Restore fetches the
@@ -157,7 +160,9 @@ pinned by a golden file. Its containers start in order:
 3. `sbx-sidecar` runs as a native sidecar.
 4. The user's image runs with `sbx-agent` as PID 1, mounting the disk at `/workspace`.
 
-Kubernetes guarantees the workload never starts before its files exist. The per-epoch
+Kubernetes guarantees the workload never starts before its files exist. The disk's mount
+root is owned by root on every storage driver, so the workload's git is told through its
+environment that `/workspace` is a safe directory. The per-epoch
 token Secret is mounted only into our containers. The workload gets just the hash of its
 agent token, has no service-account token, and our containers drop all capabilities.
 
@@ -275,6 +280,24 @@ rolls what changed. There are four images:
 - `sbx-controller`;
 - `sbx-gateway` (distroless);
 - `sbx-fixtures` (git over plain HTTP) for tests and the demo.
+
+### Demo (`internal/demo`, `sbxctl demo`, `make demo`)
+
+Plays an agent session through the gateway API alone, as an agent harness would, holding
+only the workspace's own token:
+
+1. It creates a workspace from the fixture repository.
+2. The agent's turn writes a file, makes a branch, stages one change and leaves another
+   unstaged.
+3. The agent ends its turn, and the policy suspends the workspace.
+4. When the user replies, the harness sends a wake-hint and the simulated LLM thinks.
+   The first command then shows whether the wake was hidden.
+5. The same happens again without a hint, for comparison.
+
+Each wake prints a timeline from the request to pod scheduled, files restored, serving and
+the first command. The demo checks that the git state after every sleep matches the state
+before it. `make demo` pre-pulls the images onto the kind workers first, so the wakes
+measure restore time, not image download. An e2e test runs the same session.
 
 ## Key decisions
 

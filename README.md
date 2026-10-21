@@ -30,9 +30,15 @@ make doctor
 ```bash
 make kind-up          # 3-node kind cluster + local image registry on localhost:5001
 make deploy           # build images, push them, install the chart (charts/sbx)
+make demo             # an agent session: sleep after a turn, wake hidden behind thinking
 export KUBECONFIG=$PWD/bin/kubeconfig
 kubectl -n sbx-system get pods
 ```
+
+`make demo` prints, for a wake started by a wake-hint and one without, when the pod was
+scheduled, when the files were restored, when the workspace was serving, and how long the
+agent's first command waited. `DEMO_ARGS="--thinking 5s --keep"` changes the simulated
+thinking time and keeps the workspace afterwards.
 
 `make deploy` installs, into `sbx-system`:
 
@@ -90,6 +96,7 @@ The chart's defaults are under `policy:` in `charts/sbx/values.yaml`. A broken
 | `make test` | Unit tests with `-race` and goroutine-leak checks |
 | `make lint` | golangci-lint (tools are pinned in `tools.mod`) |
 | `make test-e2e` | End-to-end tests against the deployed cluster (`RUN=<regex>`) |
+| `make demo` | Play an agent session against the deployed cluster |
 | `make gen` / `make verify-gen` | Regenerate CRDs and gRPC code / check they're current |
 | `make kind-up` / `make kind-down` | Create / delete the local cluster |
 | `make deploy` / `make undeploy` | Install / remove the platform |
