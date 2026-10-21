@@ -82,7 +82,7 @@ func TestMain(m *testing.M) {
 	agentGRPC, agentREST = gl.Addr().(*net.TCPAddr).Port, hl.Addr().(*net.TCPAddr).Port
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan struct{})
-	go func() { _ = a.ServeListeners(ctx, gl, hl); close(served) }()
+	go func() { _ = a.ServeListeners(ctx, gl, hl, nil); close(served) }()
 	conn, _ := grpc.NewClient(gl.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	agentClient = agentv1.NewAgentServiceClient(conn)
 

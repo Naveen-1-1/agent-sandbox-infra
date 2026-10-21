@@ -27,7 +27,13 @@ import (
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/token"
 )
 
-func TestMain(m *testing.M) { leaktest.VerifyTestMain(m) }
+func TestMain(m *testing.M) {
+	if os.Getenv("SBX_FAKE_EDITOR") == "1" {
+		fakeEditor() // this binary, started by the agent as its "code-server"
+		return
+	}
+	leaktest.VerifyTestMain(m)
+}
 
 // noProcs is an empty process table: the freeze gate is what's under test.
 type noProcs struct{}
@@ -38,18 +44,31 @@ func (noProcs) Signal(int, syscall.Signal) error { return nil }
 const tok = "agent-test-token"
 
 type harness struct {
-	conn   *grpc.ClientConn
-	proc   processv1.ProcessServiceClient
-	agent  agentv1.AgentServiceClient
-	rest   string
-	root   string
-	cancel context.CancelFunc
+	conn     *grpc.ClientConn
+	proc     processv1.ProcessServiceClient
+	agent    agentv1.AgentServiceClient
+	rest     string
+	activity string // the activity endpoint
+	root     string
+	cancel   context.CancelFunc
 }
 
-func start(t *testing.T) *harness {
+func start(t *testing.T) *harness { return startWith(t, nil) }
+
+// startWith runs an agent whose config edit adjusts.
+func startWith(t *testing.T, edit func(*agent.Config)) *harness {
 	t.Helper()
 	root := t.TempDir()
-	srv, err := agent.New(agent.Config{Root: root, TokenSHA256: token.SHA256(tok), Procs: noProcs{}})
+	cfg := agent.Config{Root: root, TokenSHA256: token.SHA256(tok), Procs: noProcs{}}
+	al, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ActivityAddr = al.Addr().String()
+	if edit != nil {
+		edit(&cfg)
+	}
+	srv, err := agent.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +82,7 @@ func start(t *testing.T) *harness {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 1)
-	go func() { served <- srv.ServeListeners(ctx, gl, hl) }()
+	go func() { served <- srv.ServeListeners(ctx, gl, hl, al) }()
 
 	conn, err := grpc.NewClient(gl.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -71,7 +90,7 @@ func start(t *testing.T) *harness {
 	}
 	h := &harness{
 		conn: conn, proc: processv1.NewProcessServiceClient(conn), agent: agentv1.NewAgentServiceClient(conn),
-		rest: "http://" + hl.Addr().String(), root: root, cancel: cancel,
+		rest: "http://" + hl.Addr().String(), activity: "http://" + al.Addr().String() + "/v1/activity", root: root, cancel: cancel,
 	}
 	t.Cleanup(func() {
 		_ = conn.Close()

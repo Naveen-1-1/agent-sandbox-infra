@@ -32,7 +32,13 @@ func run() error {
 	flag.StringVar(&cfg.GRPCAddr, "grpc-addr", envOr("SBX_AGENT_GRPC_ADDR", ":9090"), "gRPC listen address")
 	flag.StringVar(&cfg.RESTAddr, "rest-addr", envOr("SBX_AGENT_REST_ADDR", ":8080"), "REST listen address")
 	tokenHash := flag.String("token-sha256", os.Getenv("SBX_AGENT_TOKEN_SHA256"), "hex SHA-256 of the agent token")
+	flag.StringVar(&cfg.ActivityAddr, "activity-addr", envOr("SBX_AGENT_ACTIVITY_ADDR", "127.0.0.1:9092"), "loopback address for editor activity reports")
+	editorBin := flag.String("editor", envOr("SBX_EDITOR", "/sbx/editor/code-server/bin/code-server"), "code-server launcher (no editor if missing)")
+	extensions := flag.String("editor-extensions", envOr("SBX_EDITOR_EXTENSIONS", "/sbx/editor/extensions"), "extensions to install in the editor")
 	flag.Parse()
+	if _, err := os.Stat(*editorBin); err == nil {
+		cfg.Editor = &agent.EditorConfig{Binary: *editorBin, Extensions: *extensions}
+	}
 
 	if *tokenHash == "" {
 		return fmt.Errorf("SBX_AGENT_TOKEN_SHA256 is required")

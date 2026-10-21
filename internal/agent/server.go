@@ -33,7 +33,12 @@ type Config struct {
 	TokenSHA256 []byte
 	// Procs lists and signals workload processes (default: /proc).
 	Procs Procs
-	Log   *slog.Logger
+	// ActivityAddr serves the editor extension's activity reports
+	// (default 127.0.0.1:9092). Keep it on loopback: it takes no token.
+	ActivityAddr string
+	// Editor, if set, runs code-server on first use behind /sbx/editor/.
+	Editor *EditorConfig
+	Log    *slog.Logger
 }
 
 // Server is a running agent.
@@ -41,10 +46,14 @@ type Server struct {
 	cfg      Config
 	activity *Activity
 	freezer  *Freezer
-	services *Services
+	services *Services // declared by the controller
+	internal *Services // ours: the editor
+	editor   *editor
+	terms    *terminals
 	upstream *sandboxd.Server
 	grpc     *grpc.Server
 	http     *http.Server
+	reports  *http.Server // activity reports
 }
 
 // New builds the agent: upstream sandboxd with our gate in front, plus
@@ -67,6 +76,15 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{cfg: cfg, activity: NewActivity(nil), upstream: up}
 	s.freezer = NewFreezer(cfg.Procs, s.activity, 1, os.Getpid())
 	s.services = NewServices(cfg.Root, s.activity, cfg.Log)
+	s.internal = NewServices(cfg.Root, s.activity, cfg.Log)
+	s.terms = newTerminals(s.activity)
+	if cfg.ActivityAddr == "" {
+		s.cfg.ActivityAddr = "127.0.0.1:9092"
+	}
+	if cfg.Editor != nil {
+		s.editor = &editor{cfg: *cfg.Editor, root: cfg.Root, services: s.internal,
+			activity: "http://" + s.cfg.ActivityAddr + "/v1/activity"}
+	}
 
 	// Upstream's auth interceptors run first, then our gate.
 	opts := append(up.GRPCServerOptions(),
@@ -78,9 +96,10 @@ func New(cfg Config) (*Server, error) {
 	agentv1.RegisterAgentServiceServer(s.grpc, &service{s: s})
 
 	s.http = &http.Server{
-		Handler:           restGate(s.freezer, s.activity, up.RESTHandler()),
+		Handler:           s.proxyRoutes(restGate(s.freezer, s.activity, up.RESTHandler())),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	s.reports = &http.Server{Handler: s.activityHandler(), ReadHeaderTimeout: 5 * time.Second}
 	return s, nil
 }
 
@@ -100,25 +119,37 @@ func (s *Server) Serve(ctx context.Context) error {
 		_ = gl.Close()
 		return err
 	}
-	return s.ServeListeners(ctx, gl, hl)
+	al, err := lc.Listen(ctx, "tcp", s.cfg.ActivityAddr)
+	if err != nil {
+		_ = gl.Close()
+		_ = hl.Close()
+		return err
+	}
+	return s.ServeListeners(ctx, gl, hl, al)
 }
 
 // ServeListeners is Serve on listeners the caller opened (used by tests).
-func (s *Server) ServeListeners(ctx context.Context, grpcL, restL net.Listener) error {
-	errc := make(chan error, 2)
+// activityL may be nil.
+func (s *Server) ServeListeners(ctx context.Context, grpcL, restL, activityL net.Listener) error {
+	errc := make(chan error, 3)
 	go func() { errc <- s.grpc.Serve(grpcL) }()
-	go func() {
-		err := s.http.Serve(restL)
+	serveHTTP := func(srv *http.Server, l net.Listener) {
+		err := srv.Serve(l)
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
 		errc <- err
-	}()
+	}
+	go serveHTTP(s.http, restL)
+	pending := 2
+	if activityL != nil {
+		go serveHTTP(s.reports, activityL)
+		pending++
+	}
 	s.upstream.SetReady(true)
 	s.cfg.Log.Info("agent serving", "grpc", grpcL.Addr().String(), "rest", restL.Addr().String())
 
 	var firstErr error
-	pending := 2
 	select {
 	case <-ctx.Done():
 	case firstErr = <-errc:
@@ -131,8 +162,10 @@ func (s *Server) ServeListeners(ctx context.Context, grpcL, restL net.Listener) 
 	// A frozen workload can't act on SIGTERM; resume it so it can exit.
 	_ = s.freezer.Thaw(s.freezer.currentAttempt())
 	s.services.Close()
+	s.internal.Close()
 	s.upstream.ShutdownProcesses(shutdown)
 	_ = s.http.Shutdown(shutdown)
+	_ = s.reports.Shutdown(shutdown)
 	stopped := make(chan struct{})
 	go func() { s.grpc.GracefulStop(); close(stopped) }()
 	select {
@@ -190,6 +223,7 @@ func (v *service) Thaw(_ context.Context, r *agentv1.ThawRequest) (*agentv1.Thaw
 }
 
 func (v *service) GetSignals(context.Context, *agentv1.GetSignalsRequest) (*agentv1.GetSignalsResponse, error) {
+	v.s.terms.prune()
 	return &agentv1.GetSignalsResponse{Signals: v.s.activity.Signals(), Frozen: v.s.freezer.Frozen()}, nil
 }
 
