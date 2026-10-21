@@ -39,12 +39,19 @@ t0 = datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp()
 t1 = datetime.fromisoformat(end.replace("Z", "+00:00")).timestamp()
 dur = max(int(t1 - t0), 60)
 
+def query(q):
+    url = "http://127.0.0.1:19090/api/v1/query?" + urllib.parse.urlencode({"query": q, "time": t1})
+    return json.load(urllib.request.urlopen(url, timeout=30))["data"]["result"]
+
 def integral(expr):
     # Sample every 30s over the window, then sum samples × 30s in hours.
-    q = f"sum_over_time(({expr})[{dur}s:30s]) * 30 / 3600"
-    url = "http://127.0.0.1:19090/api/v1/query?" + urllib.parse.urlencode({"query": q, "time": t1})
-    res = json.load(urllib.request.urlopen(url, timeout=30))["data"]["result"]
+    res = query(f"sum_over_time(({expr})[{dur}s:30s]) * 30 / 3600")
     return float(res[0]["value"][1]) if res else 0.0
+
+# What Prometheus holds for the window, to see why a sum is zero.
+for q in [f"max_over_time(sbx_cost_usd_per_hour[{dur}s])", f"count_over_time(sbx_cost_usd_per_hour[{dur}s])",
+          f'max_over_time(up{{job=~".*controller.*"}}[{dur}s])']:
+    print(q, "->", {r["metric"].get("phase", r["metric"].get("job", "")): r["value"][1] for r in query(q)})
 
 hours = dur / 3600
 out = {

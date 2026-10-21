@@ -141,7 +141,8 @@ cmd_bench() {
   fi
   kubectl -n "$ns" get pods
   pf=$(forward sbx-gateway 18080:80 http://127.0.0.1:18080/)
-  trap 'kill $pf 2>/dev/null' EXIT
+  # shellcheck disable=SC2064 # pf is local: expand it now, not at exit
+  trap "kill $pf 2>/dev/null" EXIT
   start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   go build -o bin/sbx-bench ./cmd/sbx-bench
   SBX_GATEWAY=http://127.0.0.1:18080 NAMESPACE="$ns" hack/bench.sh --env aws \
