@@ -28,6 +28,10 @@ const (
 	Agent Purpose = "agent"
 	// Broker authenticates a pod's sidecar to the broker.
 	Broker Purpose = "broker"
+	// Gateway authenticates a client (an agent harness, a browser) to one
+	// workspace through the gateway. It is derived with epoch 0, so it stays
+	// valid across wakes.
+	Gateway Purpose = "gateway"
 )
 
 // MinKeyBytes is the shortest accepted master key.

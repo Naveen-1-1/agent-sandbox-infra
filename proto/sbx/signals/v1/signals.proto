@@ -20,6 +20,8 @@ message Signals {
   int32 held_requests = 4;
   // Last time the agent finished a turn (turn-ended API).
   google.protobuf.Timestamp last_turn_ended = 5;
+  // Last time a turn started: a user message arrived (wake-hint API).
+  google.protobuf.Timestamp last_turn_started = 6;
 }
 
 // Command is a running process started through the platform.

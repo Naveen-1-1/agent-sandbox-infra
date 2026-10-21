@@ -149,8 +149,10 @@ type Signals struct {
 	HeldRequests int32 `protobuf:"varint,4,opt,name=held_requests,json=heldRequests,proto3" json:"held_requests,omitempty"`
 	// Last time the agent finished a turn (turn-ended API).
 	LastTurnEnded *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_turn_ended,json=lastTurnEnded,proto3" json:"last_turn_ended,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Last time a turn started: a user message arrived (wake-hint API).
+	LastTurnStarted *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_turn_started,json=lastTurnStarted,proto3" json:"last_turn_started,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Signals) Reset() {
@@ -214,6 +216,13 @@ func (x *Signals) GetHeldRequests() int32 {
 func (x *Signals) GetLastTurnEnded() *timestamppb.Timestamp {
 	if x != nil {
 		return x.LastTurnEnded
+	}
+	return nil
+}
+
+func (x *Signals) GetLastTurnStarted() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastTurnStarted
 	}
 	return nil
 }
@@ -344,13 +353,14 @@ var File_sbx_signals_v1_signals_proto protoreflect.FileDescriptor
 
 const file_sbx_signals_v1_signals_proto_rawDesc = "" +
 	"\n" +
-	"\x1csbx/signals/v1/signals.proto\x12\x0esbx.signals.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb2\x02\n" +
+	"\x1csbx/signals/v1/signals.proto\x12\x0esbx.signals.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfa\x02\n" +
 	"\aSignals\x12?\n" +
 	"\rlast_activity\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\flastActivity\x12B\n" +
 	"\x10running_commands\x18\x02 \x03(\v2\x17.sbx.signals.v1.CommandR\x0frunningCommands\x129\n" +
 	"\fopen_streams\x18\x03 \x03(\v2\x16.sbx.signals.v1.StreamR\vopenStreams\x12#\n" +
 	"\rheld_requests\x18\x04 \x01(\x05R\fheldRequests\x12B\n" +
-	"\x0flast_turn_ended\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\rlastTurnEnded\"\x9f\x01\n" +
+	"\x0flast_turn_ended\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\rlastTurnEnded\x12F\n" +
+	"\x11last_turn_started\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0flastTurnStarted\"\x9f\x01\n" +
 	"\aCommand\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12/\n" +
@@ -399,14 +409,15 @@ var file_sbx_signals_v1_signals_proto_depIdxs = []int32{
 	3, // 1: sbx.signals.v1.Signals.running_commands:type_name -> sbx.signals.v1.Command
 	4, // 2: sbx.signals.v1.Signals.open_streams:type_name -> sbx.signals.v1.Stream
 	5, // 3: sbx.signals.v1.Signals.last_turn_ended:type_name -> google.protobuf.Timestamp
-	0, // 4: sbx.signals.v1.Command.kind:type_name -> sbx.signals.v1.CommandKind
-	5, // 5: sbx.signals.v1.Command.started_at:type_name -> google.protobuf.Timestamp
-	1, // 6: sbx.signals.v1.Stream.kind:type_name -> sbx.signals.v1.StreamKind
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	5, // 4: sbx.signals.v1.Signals.last_turn_started:type_name -> google.protobuf.Timestamp
+	0, // 5: sbx.signals.v1.Command.kind:type_name -> sbx.signals.v1.CommandKind
+	5, // 6: sbx.signals.v1.Command.started_at:type_name -> google.protobuf.Timestamp
+	1, // 7: sbx.signals.v1.Stream.kind:type_name -> sbx.signals.v1.StreamKind
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_sbx_signals_v1_signals_proto_init() }
