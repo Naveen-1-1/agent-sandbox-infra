@@ -1,0 +1,31 @@
+{
+  "repos": [
+    {
+      "name": "vggt",
+      "url": "https://github.com/facebookresearch/vggt.git",
+      "commit": "a288dd0f14786c93483e45524328726ab7b1b4ce",
+      "profile": "pip",
+      "image": "mcr.microsoft.com/devcontainers/python:3.12",
+      "command": ".venv/bin/python -c \"import torch; torch.set_grad_enabled(False); from vggt.models.aggregator import Aggregator; from vggt.utils.rotation import quat_to_mat, mat_to_quat; m = Aggregator(img_size=112, patch_size=14, embed_dim=128, depth=2, num_heads=4, patch_embed='conv', cached_layer_indices=(1,)).eval(); out, i = m(torch.rand(1, 2, 3, 112, 112)); q = torch.nn.functional.normalize(torch.randn(256, 4), dim=-1); R = quat_to_mat(q); print(torch.__version__, out[-1].shape, i, float((quat_to_mat(mat_to_quat(R)) - R).abs().max()))\"",
+      "edit": "README.md"
+    },
+    {
+      "name": "graphql-js",
+      "url": "https://github.com/graphql/graphql-js.git",
+      "commit": "106e879974bc9b0f5c7cb233d68c237d1c81bbc4",
+      "profile": "npm",
+      "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+      "command": "npm run --silent testonly",
+      "edit": "README.md"
+    },
+    {
+      "name": "pluggy",
+      "url": "https://github.com/pytest-dev/pluggy.git",
+      "commit": "49c07369faedfbf8689dc2d86c3330d48ea286ad",
+      "profile": "uv",
+      "image": "ghcr.io/astral-sh/uv:0.13.4-python3.12-trixie-slim",
+      "command": ".venv/bin/python -m pytest -q -p no:cacheprovider",
+      "edit": "README.rst"
+    }
+  ]
+}

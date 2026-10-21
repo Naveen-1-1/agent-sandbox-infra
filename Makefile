@@ -196,6 +196,13 @@ demo: ## Play an agent session that sleeps and wakes (run `make kind-up deploy` 
 	@SBX_TOKEN=$$(kubectl -n $(NAMESPACE) get secret sbx-gateway-admin -o jsonpath='{.data.token}' | base64 -d) \
 	  bin/sbxctl demo --image $(DEMO_IMAGE) $(DEMO_ARGS)
 
+BENCH_ARGS ?=
+
+.PHONY: bench
+bench: ## Measure the platform on the real repositories in test/bench/repos.json; writes notes/bench-kind-<date>.json (BENCH_ARGS for sbx-bench flags).
+	$(GO) build -o bin/sbx-bench ./cmd/sbx-bench
+	NAMESPACE=$(NAMESPACE) hack/bench.sh --env kind $(BENCH_ARGS)
+
 .PHONY: ui
 ui: ## Print a link that opens the web UI signed in as admin (run `make kind-up deploy` first).
 	@$(GO) build -o bin/sbxctl ./cmd/sbxctl
