@@ -53,6 +53,10 @@ spec:
             - {name: SBX_LEADER_ELECT, value: {{ .Values.controller.leaderElect | quote }}}
             - {name: SBX_MAX_CONCURRENT_RECONCILES, value: {{ .Values.controller.maxConcurrentReconciles | quote }}}
             - {name: SBX_ALLOW_PRIVATE_REPOS, value: {{ .Values.repositories.allowPrivateHosts | quote }}}
+            # Sleep decisions.
+            - {name: SBX_GATEWAY_SIGNALS_SERVICE, value: {{ printf "%s-gateway-signals" .Release.Name | quote }}}
+            - {name: SBX_OPS_MAX_CONCURRENT, value: {{ .Values.controller.ops.maxConcurrent | quote }}}
+            - {name: SBX_OPS_MIN_SUSPEND, value: {{ .Values.controller.ops.minSuspend | quote }}}
             # Workspace pods.
             - {name: SBX_RUNTIME_IMAGE, value: {{ include "sbx.image" (dict "root" . "image" .Values.images.runtime "name" "runtime") | quote }}}
             - {name: SBX_BROKER_ADDR, value: {{ include "sbx.brokerAddr" . | quote }}}

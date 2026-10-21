@@ -24,9 +24,23 @@ controller:
   healthPort: 8081
   maxBundleBytes: 524288000 # 500 MiB
   presignTTL: 15m
+  # At most maxConcurrent wakes and suspends run at once; wakes go first,
+  # but minSuspend slots stay open for suspends so a storm still frees capacity.
+  ops:
+    maxConcurrent: 8
+    minSuspend: 2
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 512Mi}
+
+# The cluster-wide sleep policy, rendered into the sbx-policy-defaults
+# ConfigMap. A sbx-policy ConfigMap (written by the settings page) overrides
+# it at runtime and survives upgrades. Policies: fixed, never.
+policy:
+  name: fixed
+  params:
+    idleTimeout: 10m
+    afterTurnEnded: 2m
 
 gateway:
   replicas: 2

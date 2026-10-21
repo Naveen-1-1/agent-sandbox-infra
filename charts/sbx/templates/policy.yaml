@@ -1,0 +1,10 @@
+# The chart's sleep policy. The controller prefers a sbx-policy ConfigMap
+# when one exists (the settings page writes it); this one is the fallback.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sbx-policy-defaults
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+data:
+  policy.yaml: |
+    {{- dict "name" .Values.policy.name "params" .Values.policy.params | toYaml | nindent 4 }}

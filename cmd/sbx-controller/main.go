@@ -22,10 +22,14 @@ import (
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	sbv1 "sigs.k8s.io/agent-sandbox/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -33,6 +37,8 @@ import (
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/broker"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/ops"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/sleep"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/workspace"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/objstore"
@@ -52,6 +58,8 @@ type options struct {
 	ws                                  workspace.Config
 	storageSize, workspaceResources     string
 	snapshotExclude                     string
+	gatewaySignalsService               string
+	opsMax, opsMinSuspend               int
 }
 
 func main() {
@@ -84,6 +92,9 @@ func main() {
 	flag.Int64Var(&o.ws.Snapshot.MaxNewBytes, "snapshot-max-new-bytes", envInt("SBX_SNAPSHOT_MAX_NEW_BYTES", 500<<20), "largest total new content in a snapshot")
 	flag.BoolVar(&o.allowPrivateRepos, "allow-private-repos", envBool("SBX_ALLOW_PRIVATE_REPOS", false), "allow source repositories on private addresses")
 	flag.IntVar(&o.ws.MaxConcurrent, "max-concurrent-reconciles", int(envInt("SBX_MAX_CONCURRENT_RECONCILES", 16)), "parallel workspace reconciles")
+	flag.StringVar(&o.gatewaySignalsService, "gateway-signals-service", os.Getenv("SBX_GATEWAY_SIGNALS_SERVICE"), "headless Service of the gateway replicas' signals port (empty: ignore gateway signals)")
+	flag.IntVar(&o.opsMax, "ops-max-concurrent", int(envInt("SBX_OPS_MAX_CONCURRENT", 8)), "wakes and suspends in progress at once")
+	flag.IntVar(&o.opsMinSuspend, "ops-min-suspend", int(envInt("SBX_OPS_MIN_SUSPEND", 2)), "slots kept for suspends while wakes wait")
 	flag.Parse()
 	o.s3.AccessKey, o.s3.SecretKey = os.Getenv("SBX_S3_ACCESS_KEY"), os.Getenv("SBX_S3_SECRET_KEY")
 	o.ws.PullPolicy = corev1.PullPolicy(envOr("SBX_PULL_POLICY", string(corev1.PullIfNotPresent)))
@@ -137,13 +148,19 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 			return err
 		}
 	}
+	ns := os.Getenv("POD_NAMESPACE")
+	if ns == "" {
+		return errors.New("POD_NAMESPACE is required")
+	}
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                        scheme,
+		Scheme: scheme,
+		// The only ConfigMaps read are the policy's, in our own namespace.
+		Cache:                         cache.Options{ByObject: map[client.Object]cache.ByObject{&corev1.ConfigMap{}: {Namespaces: map[string]cache.Config{ns: {}}}}},
 		Metrics:                       metricsserver.Options{BindAddress: o.metricsAddr},
 		HealthProbeBindAddress:        o.healthAddr,
 		LeaderElection:                o.leaderElect,
 		LeaderElectionID:              "sbx-controller.sbx.dev",
-		LeaderElectionNamespace:       os.Getenv("POD_NAMESPACE"),
+		LeaderElectionNamespace:       ns,
 		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
@@ -167,12 +184,36 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		}
 		return counts, nil
 	})
+	limiter := &ops.Limiter{Max: o.opsMax, MinSuspend: o.opsMinSuspend}
 	r := &workspace.Reconciler{
 		Client: mgr.GetClient(), API: mgr.GetAPIReader(), Scheme: scheme, Keys: keys,
 		Store: snapstore.New(store), Objects: store, Pods: workspace.GRPCPods{Keys: keys},
 		Inspector: workspace.GitInspector{AllowPrivateHosts: o.allowPrivateRepos},
 		Metrics:   wsMetrics, Snapshots: metrics.NewSnapshot(ctrlmetrics.Registry),
-		Config: o.ws,
+		Config:   o.ws,
+		Policies: &sleep.Policies{Client: mgr.GetClient(), Namespace: ns, Recorder: mgr.GetEventRecorder("sbx-controller")},
+		Ops:      limiter,
+		Sleep:    metrics.NewSleep(ctrlmetrics.Registry, limiter.Counts, ops.ClassNames),
+	}
+	if o.gatewaySignalsService != "" {
+		wakeups := make(chan event.GenericEvent, 1024)
+		col := &sleep.Collector{
+			Reader: mgr.GetAPIReader(), Namespace: ns, Service: o.gatewaySignalsService,
+			Log: ctrl.Log.WithName("gateway-signals"),
+			Changed: func(keys []string) {
+				for _, k := range keys {
+					wsNS, name, _ := strings.Cut(k, "/")
+					select {
+					case wakeups <- event.GenericEvent{Object: &sbxv1.Workspace{ObjectMeta: metav1.ObjectMeta{Namespace: wsNS, Name: name}}}:
+					default: // full: the periodic recheck catches it
+					}
+				}
+			},
+		}
+		if err := mgr.Add(col); err != nil {
+			return err
+		}
+		r.Gateways, r.Wakeups = col, wakeups
 	}
 	if err := r.SetupWithManager(mgr); err != nil {
 		return err
