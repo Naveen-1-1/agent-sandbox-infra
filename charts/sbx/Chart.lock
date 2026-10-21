@@ -5,5 +5,8 @@ dependencies:
 - name: s3-local
   repository: file://../s3-local
   version: 0.1.0
-digest: sha256:14739256a3c6db0c5b05ae9250db16ed0f9cbbead8a686e4307e0f65af8da61a
-generated: "2026-10-20T19:13:07.858333-04:00"
+- name: kube-prometheus-stack
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 91.9.0
+digest: sha256:053ef2ac38b74fa9d11e132ee471b1edac913d0ee094ef1da347701a5a45fb92
+generated: "2026-10-20T23:39:48.572208-04:00"

@@ -18,7 +18,7 @@ spec:
         checksum/values: {{ toJson .Values | sha256sum | trunc 16 }}
     spec:
       serviceAccountName: {{ .Release.Name }}-controller
-      {{- with .Values.global.imagePullSecrets }}
+      {{- with .Values.images.pullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
@@ -30,7 +30,7 @@ spec:
       containers:
         - name: controller
           image: {{ include "sbx.image" (dict "root" . "image" .Values.images.controller "name" "controller") }}
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
           args:
             - --broker-addr=:{{ .Values.controller.brokerPort }}
             - --metrics-addr=:{{ .Values.controller.metricsPort }}
@@ -60,9 +60,15 @@ spec:
             # Workspace pods.
             - {name: SBX_RUNTIME_IMAGE, value: {{ include "sbx.image" (dict "root" . "image" .Values.images.runtime "name" "runtime") | quote }}}
             - {name: SBX_BROKER_ADDR, value: {{ include "sbx.brokerAddr" . | quote }}}
-            - {name: SBX_PULL_POLICY, value: {{ .Values.global.imagePullPolicy | quote }}}
+            - {name: SBX_PULL_POLICY, value: {{ .Values.images.pullPolicy | quote }}}
             - {name: SBX_DEFAULT_IMAGE, value: {{ .Values.workspace.defaultImage | quote }}}
             - {name: SBX_TOOLS_MODE, value: {{ .Values.workspace.tools | quote }}}
+            # Cost metrics.
+            - {name: SBX_PRICE_CPU_CORE_HOUR, value: {{ .Values.pricing.cpuCoreHour | quote }}}
+            - {name: SBX_PRICE_MEMORY_GIB_HOUR, value: {{ .Values.pricing.memoryGiBHour | quote }}}
+            - {name: SBX_PRICE_DISK_GIB_MONTH, value: {{ .Values.pricing.diskGiBMonth | quote }}}
+            - {name: SBX_PRICE_OBJECT_GIB_MONTH, value: {{ .Values.pricing.objectGiBMonth | quote }}}
+            - {name: SBX_STORAGE_USAGE_INTERVAL, value: {{ .Values.pricing.storageUsageInterval | quote }}}
             - {name: SBX_RUN_AS_USER, value: {{ .Values.workspace.runAsUser | quote }}}
             - {name: SBX_RUN_AS_GROUP, value: {{ .Values.workspace.runAsGroup | quote }}}
             - {name: SBX_STORAGE_SIZE, value: {{ .Values.workspace.storage.size | quote }}}
@@ -100,7 +106,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ .Release.Name }}-controller
-  labels: {{- include "sbx.labels" . | nindent 4 }}
+  labels:
+    {{- include "sbx.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sbx-controller
 spec:
   selector:
     app.kubernetes.io/instance: {{ .Release.Name }}

@@ -67,7 +67,7 @@ spec:
         app.kubernetes.io/name: sbx-gateway
     spec:
       serviceAccountName: {{ $name }}
-      {{- with .Values.global.imagePullSecrets }}
+      {{- with .Values.images.pullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
@@ -79,7 +79,7 @@ spec:
       containers:
         - name: gateway
           image: {{ include "sbx.image" (dict "root" . "image" .Values.images.gateway "name" "gateway") }}
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
           env:
             - {name: SBX_WORKSPACE_NAMESPACE, value: {{ .Values.workspace.namespace | quote }}}
             - {name: SBX_HOLD_PER_WORKSPACE, value: {{ .Values.gateway.hold.perWorkspace | quote }}}
@@ -136,12 +136,16 @@ spec:
       nodePort: {{ .Values.gateway.service.nodePort }}
       {{- end }}
 ---
-# Headless: the controller reaches every gateway replica for traffic signals.
+# Headless: the controller reaches every gateway replica for traffic signals,
+# and Prometheus scrapes each one's metrics.
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ $name }}-signals
-  labels: {{- include "sbx.labels" . | nindent 4 }}
+  labels:
+    {{- include "sbx.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sbx-gateway
+    app.kubernetes.io/component: replicas
 spec:
   clusterIP: None
   selector:

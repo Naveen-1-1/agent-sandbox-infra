@@ -21,7 +21,7 @@ spec:
       containers:
         - name: git
           image: {{ include "sbx.image" (dict "root" . "image" .Values.images.fixtures "name" "fixtures") }}
-          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
           ports: [{name: http, containerPort: 8080}]
           readinessProbe:
             httpGet: {path: /hello-node.git/info/refs, port: http}

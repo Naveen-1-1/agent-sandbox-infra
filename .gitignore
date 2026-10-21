@@ -22,3 +22,4 @@ internal/gateway/webui/dist/
 
 # Helm dependency archives (rebuilt from Chart.lock)
 charts/*/charts/*.tgz
+charts/*/charts/.deps

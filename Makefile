@@ -147,12 +147,27 @@ push: images ## Push images to the local registry.
 NAMESPACE ?= sbx-system
 VALUES    ?= deploy/values/kind.yaml
 
-.PHONY: deploy
-deploy: push ## Build, push and install the platform (VALUES=deploy/values/kind.yaml).
+# The umbrella chart's dependencies, rebuilt only when the lock or a local
+# subchart changes (kube-prometheus-stack is downloaded once).
+CHART_DEPS := charts/sbx/Chart.yaml charts/sbx/Chart.lock $(shell find charts/agent-sandbox charts/s3-local -type f)
+
+charts/sbx/charts/.deps: $(CHART_DEPS)
+	@helm repo list 2>/dev/null | grep -q '^prometheus-community' || \
+	  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null
 	helm dependency build --skip-refresh charts/sbx >/dev/null
-	kubectl apply --server-side -f $(CRD_DIR) >/dev/null
+	@touch $@
+
+.PHONY: deploy
+deploy: push charts/sbx/charts/.deps ## Build, push and install the platform (VALUES=deploy/values/kind.yaml).
+	@# Helm installs CRDs only on a first install; apply every chart's on each deploy.
+	helm show crds charts/sbx | kubectl apply --server-side --force-conflicts -f - >/dev/null
 	helm upgrade --install sbx charts/sbx --namespace $(NAMESPACE) --create-namespace \
-	  -f $(VALUES) --set global.imageTag=$(TAG) --wait --timeout 5m
+	  -f $(VALUES) --set images.tag=$(TAG) --wait --timeout 8m
+
+.PHONY: grafana
+grafana: ## Open Grafana with the sbx dashboards on http://127.0.0.1:3000 (anonymous viewer on kind).
+	@echo "Grafana: http://127.0.0.1:3000/dashboards?tag=sbx  (admin password: kubectl -n $(NAMESPACE) get secret sbx-grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
+	kubectl -n $(NAMESPACE) port-forward svc/sbx-grafana 3000:80
 
 .PHONY: undeploy
 undeploy: ## Uninstall the platform (CRDs and the signing key are kept).

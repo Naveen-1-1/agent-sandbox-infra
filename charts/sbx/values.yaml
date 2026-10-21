@@ -1,15 +1,15 @@
 # Every endpoint, credential, storage class and registry comes from here;
 # nothing in the templates assumes kind or a single node.
 
-global:
-  # Registry prefix for sbx images, e.g. localhost:5001 or ghcr.io/org.
-  imageRegistry: ""
-  # Default tag for sbx images (make deploy sets a content hash).
-  imageTag: ""
-  imagePullPolicy: IfNotPresent
-  imagePullSecrets: []
-
+# sbx's own images. (Not under global: subcharts such as the monitoring
+# stack read global.imageRegistry too, and must keep pulling from theirs.)
 images:
+  # Registry prefix, e.g. localhost:5001 or ghcr.io/org.
+  registry: ""
+  # Default tag (make deploy sets a content hash).
+  tag: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
   controller: {repository: sbx-controller, tag: ""}
   gateway: {repository: sbx-gateway, tag: ""}
   runtime: {repository: sbx-runtime, tag: ""}
@@ -134,3 +134,82 @@ agentSandbox:
 
 s3local:
   enabled: false
+
+# List prices behind sbx_cost_usd_per_hour. The defaults are on-demand AWS
+# us-east-1 prices (Fargate per vCPU and GiB, gp3 volumes, S3 Standard);
+# set your own. They show the scale of the saving, not a bill.
+pricing:
+  cpuCoreHour: 0.04048
+  memoryGiBHour: 0.004445
+  diskGiBMonth: 0.08
+  objectGiBMonth: 0.023
+  storageUsageInterval: 5m # how often object storage is listed for its size
+
+# ServiceMonitors for the controller and gateway, and the Grafana dashboards
+# (fleet, wake, storage-cost) as ConfigMaps for Grafana's dashboard sidecar.
+# They are always rendered with the bundled stack (monitoring.enabled); turn
+# them on to use a Prometheus operator and Grafana the cluster already runs.
+metrics:
+  serviceMonitors: false
+  dashboards: false
+
+# kube-prometheus-stack, trimmed to what the dashboards need: Prometheus
+# scraping only the platform's ServiceMonitors, and Grafana with the sbx
+# dashboards. Alertmanager, node-exporter, kube-state-metrics and the
+# Kubernetes component scrapes are off.
+monitoring:
+  enabled: false
+  fullnameOverride: sbx-monitoring
+  crds:
+    enabled: true
+  defaultRules:
+    create: false
+  alertmanager:
+    enabled: false
+  nodeExporter:
+    enabled: false
+  kubeStateMetrics:
+    enabled: false
+  kubeApiServer:
+    enabled: false
+  kubelet:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  coreDns:
+    enabled: false
+  kubeEtcd:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  kubeProxy:
+    enabled: false
+  prometheusOperator:
+    admissionWebhooks:
+      enabled: false
+    tls:
+      enabled: false
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {memory: 256Mi}
+  prometheus:
+    prometheusSpec:
+      # Pick up ServiceMonitors without the stack's release label.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      scrapeInterval: 15s
+      retention: 3d
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {memory: 1Gi}
+  grafana:
+    defaultDashboardsEnabled: false
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        labelValue: "1"
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {memory: 512Mi}

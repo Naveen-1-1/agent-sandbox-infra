@@ -6,9 +6,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/* sbx.image renders registry/repository:tag for one of .Values.images. */}}
 {{- define "sbx.image" -}}
 {{- $root := .root -}}
-{{- $tag := default $root.Values.global.imageTag .image.tag -}}
-{{- if not $tag }}{{ fail (printf "set global.imageTag or images.%s.tag" .name) }}{{ end -}}
-{{- with $root.Values.global.imageRegistry }}{{ . }}/{{ end }}{{ .image.repository }}:{{ $tag }}
+{{- $tag := default $root.Values.images.tag .image.tag -}}
+{{- if not $tag }}{{ fail (printf "set images.tag or images.%s.tag" .name) }}{{ end -}}
+{{- with $root.Values.images.registry }}{{ . }}/{{ end }}{{ .image.repository }}:{{ $tag }}
 {{- end -}}
 
 {{- define "sbx.signingSecret" -}}

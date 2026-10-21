@@ -1,7 +1,7 @@
 # Local kind cluster: images from the local registry, bundled SeaweedFS and
 # the test-only git fixtures server.
-global:
-  imageRegistry: localhost:5001
+images:
+  registry: localhost:5001
 s3local:
   enabled: true
 fixtures:
@@ -16,3 +16,13 @@ gateway:
   # DNS setup: http://<name>.<namespace>.sbx.localhost:8080/
   domain: sbx.localhost
   publicPort: 8080
+# Prometheus and Grafana with the sbx dashboards; `make grafana` opens it.
+monitoring:
+  enabled: true
+  grafana:
+    grafana.ini:
+      auth.anonymous:
+        enabled: true
+        org_role: Viewer
+pricing:
+  storageUsageInterval: 30s

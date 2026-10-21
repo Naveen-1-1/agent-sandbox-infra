@@ -1,0 +1,47 @@
+{{- if or .Values.monitoring.enabled .Values.metrics.serviceMonitors }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}-controller
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: sbx-controller
+  endpoints:
+    - port: metrics
+      interval: 15s
+---
+# Every gateway replica keeps its own counters and held requests.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: sbx-gateway
+      app.kubernetes.io/component: replicas
+  endpoints:
+    - port: admin
+      path: /metrics
+      interval: 15s
+{{- end }}
+{{- if or .Values.monitoring.enabled .Values.metrics.dashboards }}
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $.Release.Name }}-dashboard-{{ base $path | trimSuffix ".json" }}
+  labels:
+    {{- include "sbx.labels" $ | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  {{ base $path }}: |-
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
+{{- end }}
