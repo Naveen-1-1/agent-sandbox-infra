@@ -17,6 +17,7 @@ import (
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	brokerv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/broker/v1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/broker/brokertest"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/depcache"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/objstore"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapstore"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/testutil/leaktest"
@@ -187,5 +188,58 @@ func TestSnapshotUpload(t *testing.T) {
 	_, err = c.PresignSnapshotUpload(ctx(t), &brokerv1.PresignSnapshotUploadRequest{AttemptId: "a4", Sha256: "../../etc", SizeBytes: 1})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("non-hex sha256: %v, want InvalidArgument", err)
+	}
+}
+
+func TestDependencyCache(t *testing.T) {
+	env := brokertest.Start(t, 64)
+	a, b := workspace(1), workspace(1)
+	b.Name, b.UID = "other", "uid-other"
+	env.Set(a)
+	env.Set(b)
+	ca, cb := env.Client(t, a, 1), env.Client(t, b, 1)
+	key := &brokerv1.DepsKey{Profile: "npm", Key: depcache.Key("npm", "lock", "img", "arm64")}
+
+	look, err := ca.LookupDeps(ctx(t), &brokerv1.LookupDepsRequest{Keys: []*brokerv1.DepsKey{key}})
+	if err != nil || len(look.GetEntries()) != 1 || look.GetEntries()[0].GetHit() {
+		t.Fatalf("empty cache lookup = %v, %v; want one miss", look, err)
+	}
+	body := []byte("node_modules archive")
+	up, err := ca.PresignDepsUpload(ctx(t), &brokerv1.PresignDepsUploadRequest{Key: key, Sha256: sum(body), SizeBytes: int64(len(body))})
+	if err != nil || up.GetAlreadyExists() {
+		t.Fatalf("presign: %v, %v", up, err)
+	}
+	if up.GetUpload().GetKey() != snapstore.DepsKey("npm", key.GetKey()) {
+		t.Errorf("object key %q", up.GetUpload().GetKey())
+	}
+	if code, msg := send(t, up.GetUpload(), body); code != http.StatusOK {
+		t.Fatalf("upload: %d %s", code, msg)
+	}
+
+	// Another workspace with the same lockfile and image gets it.
+	look, err = cb.LookupDeps(ctx(t), &brokerv1.LookupDepsRequest{Keys: []*brokerv1.DepsKey{key}})
+	if err != nil || !look.GetEntries()[0].GetHit() || look.GetEntries()[0].GetSha256() != sum(body) {
+		t.Fatalf("lookup after upload = %v, %v", look, err)
+	}
+	if code, got := send(t, look.GetEntries()[0].GetDownload(), nil); code != http.StatusOK || !bytes.Equal(got, body) {
+		t.Fatalf("download: %d %q", code, got)
+	}
+	// Write-once: nobody replaces it.
+	again, err := cb.PresignDepsUpload(ctx(t), &brokerv1.PresignDepsUploadRequest{Key: key, Sha256: sum([]byte("other")), SizeBytes: 5})
+	if err != nil || !again.GetAlreadyExists() || again.GetUpload().GetUrl() != "" {
+		t.Fatalf("second upload: %v, %v; want already_exists and no URL", again, err)
+	}
+
+	for name, bad := range map[string]*brokerv1.DepsKey{
+		"unknown profile": {Profile: "cargo", Key: key.GetKey()},
+		"bad key":         {Profile: "npm", Key: "../../ws/uid-demo/manifest"},
+	} {
+		if _, err := ca.LookupDeps(ctx(t), &brokerv1.LookupDepsRequest{Keys: []*brokerv1.DepsKey{bad}}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("%s: %v, want InvalidArgument", name, err)
+		}
+	}
+	_, err = ca.PresignDepsUpload(ctx(t), &brokerv1.PresignDepsUploadRequest{Key: &brokerv1.DepsKey{Profile: "pip", Key: key.GetKey()}, Sha256: sum(body), SizeBytes: 65})
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Errorf("over the size limit: %v, want ResourceExhausted", err)
 	}
 }

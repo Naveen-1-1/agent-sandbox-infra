@@ -80,9 +80,9 @@ message PresignBaseUploadResponse {
 message DepsKey {
   // Dependency profile, for example "npm".
   string profile = 1;
-  // SHA-256 over the profile, lockfile, package-manager version, image and arch.
+  // SHA-256 over the profile, lockfile, workload image digest and arch.
   string key = 2;
-  // Directory the archive restores, relative to the workspace.
+  // Unused: the profile names the directory.
   string path = 3;
 }
 

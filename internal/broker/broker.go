@@ -23,6 +23,7 @@ import (
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	brokerv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/broker/v1"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/depcache"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/objstore"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapstore"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/token"
@@ -46,6 +47,7 @@ type Config struct {
 	Workspaces     Workspaces
 	PresignTTL     time.Duration
 	MaxBundleBytes int64
+	MaxDepsBytes   int64
 }
 
 // Server implements BrokerService.
@@ -228,6 +230,64 @@ func (s *Server) PresignBaseUpload(ctx context.Context, r *brokerv1.PresignBaseU
 		return nil, err
 	}
 	return &brokerv1.PresignBaseUploadResponse{Upload: resp.Upload, AlreadyExists: resp.AlreadyExists}, nil
+}
+
+// LookupDeps looks dependency archives up in the shared cache and returns a
+// download URL for each hit. The cache is shared by every workspace (keys
+// say what produced an archive, not who), which is why it is write-once.
+func (s *Server) LookupDeps(ctx context.Context, r *brokerv1.LookupDepsRequest) (*brokerv1.LookupDepsResponse, error) {
+	if len(r.GetKeys()) > 8 {
+		return nil, status.Error(codes.InvalidArgument, "at most 8 keys per lookup")
+	}
+	resp := &brokerv1.LookupDepsResponse{}
+	for _, k := range r.GetKeys() {
+		obj, err := depsObject(k)
+		if err != nil {
+			return nil, err
+		}
+		entry := &brokerv1.DepsEntry{Key: k}
+		o, err := s.cfg.Store.Head(ctx, obj)
+		switch {
+		case errors.Is(err, objstore.ErrNotFound):
+		case err != nil:
+			return nil, status.Error(codes.Unavailable, "object store: "+err.Error())
+		default:
+			req, err := s.cfg.Store.PresignGet(ctx, obj, s.cfg.PresignTTL)
+			if err != nil {
+				return nil, status.Error(codes.Unavailable, err.Error())
+			}
+			entry.Hit, entry.Download, entry.Sha256 = true, s.presigned(req, obj), o.SHA256
+		}
+		resp.Entries = append(resp.Entries, entry)
+	}
+	return resp, nil
+}
+
+// PresignDepsUpload returns a create-only, checksum-checked URL for a
+// dependency archive, or AlreadyExists if another pod got there first.
+func (s *Server) PresignDepsUpload(ctx context.Context, r *brokerv1.PresignDepsUploadRequest) (*brokerv1.PresignDepsUploadResponse, error) {
+	obj, err := depsObject(r.GetKey())
+	if err != nil {
+		return nil, err
+	}
+	if !isSHA256(r.GetSha256()) || r.GetSizeBytes() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "sha256 and size_bytes are required")
+	}
+	if max := s.cfg.MaxDepsBytes; max > 0 && r.GetSizeBytes() > max {
+		return nil, status.Errorf(codes.ResourceExhausted, "archive is %d bytes, over the %d-byte limit", r.GetSizeBytes(), max)
+	}
+	resp, err := s.presignCreate(ctx, obj, r.GetSha256())
+	if err != nil {
+		return nil, err
+	}
+	return &brokerv1.PresignDepsUploadResponse{Upload: resp.Upload, AlreadyExists: resp.AlreadyExists}, nil
+}
+
+func depsObject(k *brokerv1.DepsKey) (string, error) {
+	if _, ok := depcache.Lookup(k.GetProfile()); !ok || !depcache.ValidKey(k.GetKey()) {
+		return "", status.Errorf(codes.InvalidArgument, "invalid dependency key %q/%q", k.GetProfile(), k.GetKey())
+	}
+	return snapstore.DepsKey(k.GetProfile(), k.GetKey()), nil
 }
 
 // presignCreate returns a create-only, checksum-checked upload URL for key,

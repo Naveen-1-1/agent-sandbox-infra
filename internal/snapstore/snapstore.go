@@ -6,6 +6,7 @@
 //	ws/<uid>/manifest.json         latest snapshot; replaced only by compare-and-swap
 //	ws/<uid>/b/<sha256>.bundle     snapshot bundles, content addressed, written once
 //	bases/<urlhash>/<sha>.bundle   cached upstream base commits, written once
+//	deps/<profile>/<key>.tar.zst   dependency directories, shared, written once
 //
 // The manifest only moves forward: a commit names the sequence number it
 // builds on, and loses (ErrStale) if a newer snapshot got there first.
@@ -74,6 +75,9 @@ func BaseBundleKey(repoURL, sha string) string {
 	h := sha256.Sum256([]byte(repoURL))
 	return "bases/" + hex.EncodeToString(h[:16]) + "/" + sha + ".bundle"
 }
+
+// DepsKey is the object key of a dependency archive (see package depcache).
+func DepsKey(profile, key string) string { return "deps/" + profile + "/" + key + ".tar.zst" }
 
 // Store reads and commits manifests.
 type Store struct {

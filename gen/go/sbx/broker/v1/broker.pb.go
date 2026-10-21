@@ -465,9 +465,9 @@ type DepsKey struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Dependency profile, for example "npm".
 	Profile string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	// SHA-256 over the profile, lockfile, package-manager version, image and arch.
+	// SHA-256 over the profile, lockfile, workload image digest and arch.
 	Key string `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
-	// Directory the archive restores, relative to the workspace.
+	// Unused: the profile names the directory.
 	Path          string `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

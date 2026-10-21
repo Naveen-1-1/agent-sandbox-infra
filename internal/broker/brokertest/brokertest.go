@@ -33,8 +33,8 @@ type Env struct {
 	workspaces map[string]*sbxv1.Workspace
 }
 
-// Start runs a broker until the test ends. maxBundle limits snapshot uploads
-// (0 = no limit).
+// Start runs a broker until the test ends. maxBundle limits snapshot and
+// dependency uploads (0 = no limit).
 func Start(t testing.TB, maxBundle int64) *Env {
 	t.Helper()
 	k, err := token.NewKeyring(bytes.Repeat([]byte{7}, 32))
@@ -47,7 +47,7 @@ func Start(t testing.TB, maxBundle int64) *Env {
 	mem.SetBaseURL(s3.URL)
 
 	e := &Env{Store: mem, Keyring: k, workspaces: map[string]*sbxv1.Workspace{}}
-	b := broker.New(broker.Config{Keyring: k, Store: mem, Workspaces: e, MaxBundleBytes: maxBundle})
+	b := broker.New(broker.Config{Keyring: k, Store: mem, Workspaces: e, MaxBundleBytes: maxBundle, MaxDepsBytes: maxBundle})
 	g := grpc.NewServer(grpc.ChainUnaryInterceptor(b.UnaryInterceptor()))
 	b.Register(g)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
