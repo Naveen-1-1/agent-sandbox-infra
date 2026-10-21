@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -153,5 +154,36 @@ func TestKeys(t *testing.T) {
 	b := snapstore.BaseBundleKey("https://github.com/a/c.git", "sha1")
 	if a == b {
 		t.Error("different repositories share a base bundle key")
+	}
+}
+
+func TestUsageByKind(t *testing.T) {
+	ctx := context.Background()
+	obj := objstore.NewMem()
+	put := func(key string, n int) {
+		t.Helper()
+		if _, err := obj.Put(ctx, key, bytes.NewReader(make([]byte, n)), int64(n), objstore.Cond{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(snapstore.BundleKey("uid-a", strings.Repeat("a", 64)), 100)
+	put(snapstore.ManifestKey("uid-a"), 10)
+	put(snapstore.BaseBundleKey("https://example.com/r.git", "abc"), 1000)
+	put(snapstore.DepsKey("npm", strings.Repeat("b", 64)), 5000)
+	put(snapstore.DepsKey("pip", strings.Repeat("c", 64)), 7000)
+
+	u, err := snapstore.New(obj).Usage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]snapstore.Usage{
+		snapstore.KindSnapshots: {Bytes: 110, Objects: 2},
+		snapstore.KindBases:     {Bytes: 1000, Objects: 1},
+		snapstore.KindDeps:      {Bytes: 12000, Objects: 2},
+	}
+	for k, w := range want {
+		if u[k] != w {
+			t.Errorf("%s = %+v, want %+v", k, u[k], w)
+		}
 	}
 }

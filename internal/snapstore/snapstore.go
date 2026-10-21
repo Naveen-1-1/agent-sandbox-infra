@@ -76,6 +76,34 @@ func BaseBundleKey(repoURL, sha string) string {
 	return "bases/" + hex.EncodeToString(h[:16]) + "/" + sha + ".bundle"
 }
 
+// Kinds of stored objects, by key prefix.
+const (
+	KindSnapshots = "snapshots" // ws/: manifests and snapshot bundles
+	KindBases     = "bases"     // bases/: cached upstream commits
+	KindDeps      = "deps"      // deps/: dependency archives
+)
+
+// Usage is how much is stored of one kind.
+type Usage struct{ Bytes, Objects int64 }
+
+// Usage lists the store and adds up what each kind takes.
+func (s *Store) Usage(ctx context.Context) (map[string]Usage, error) {
+	out := map[string]Usage{}
+	for kind, prefix := range map[string]string{KindSnapshots: "ws/", KindBases: "bases/", KindDeps: "deps/"} {
+		objs, err := s.obj.List(ctx, prefix)
+		if err != nil {
+			return nil, err
+		}
+		var u Usage
+		for _, o := range objs {
+			u.Bytes += o.Size
+			u.Objects++
+		}
+		out[kind] = u
+	}
+	return out, nil
+}
+
 // DepsKey is the object key of a dependency archive (see package depcache).
 func DepsKey(profile, key string) string { return "deps/" + profile + "/" + key + ".tar.zst" }
 

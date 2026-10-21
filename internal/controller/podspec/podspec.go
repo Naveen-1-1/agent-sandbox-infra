@@ -69,6 +69,21 @@ func Tokens(keys token.Keyring, workspaceUID string, epoch int64) map[string]str
 	}
 }
 
+// SidecarResources are what each of our own containers asks for.
+var SidecarResources = corev1.ResourceRequirements{
+	Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
+	Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+}
+
+// Requests is what a running workspace pod asks for: the workload and the
+// native sidecar (the init containers have finished by then).
+func Requests(workload corev1.ResourceRequirements) (cpu, memory resource.Quantity) {
+	cpu, memory = workload.Requests.Cpu().DeepCopy(), workload.Requests.Memory().DeepCopy()
+	cpu.Add(*SidecarResources.Requests.Cpu())
+	memory.Add(*SidecarResources.Requests.Memory())
+	return cpu, memory
+}
+
 // ToolsMode is how the workload container gets /sbx: the agent it runs as
 // PID 1, and the editor.
 type ToolsMode string
@@ -155,10 +170,7 @@ func Build(in Input) (sbv1.PodTemplate, error) {
 		corev1.EnvVar{Name: "SBX_DEPS_MAX_BYTES", Value: strconv.FormatInt(in.Snapshot.MaxDepsBytes, 10)},
 		corev1.EnvVar{Name: "SBX_AGENT_ADDR", Value: fmt.Sprintf("127.0.0.1:%d", AgentGRPCPort)},
 	)
-	small := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
-		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
-	}
+	small := SidecarResources
 	hardened := &corev1.SecurityContext{
 		AllowPrivilegeEscalation: ptr.To(false),
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},

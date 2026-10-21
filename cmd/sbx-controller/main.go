@@ -41,6 +41,7 @@ import (
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/podspec"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/sleep"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/workspace"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/cost"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/objstore"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapstore"
@@ -61,6 +62,8 @@ type options struct {
 	snapshotExclude                     string
 	gatewaySignalsService               string
 	opsMax, opsMinSuspend               int
+	prices                              cost.Prices
+	usageEvery                          time.Duration
 }
 
 func main() {
@@ -98,6 +101,11 @@ func main() {
 	flag.StringVar(&o.gatewaySignalsService, "gateway-signals-service", os.Getenv("SBX_GATEWAY_SIGNALS_SERVICE"), "headless Service of the gateway replicas' signals port (empty: ignore gateway signals)")
 	flag.IntVar(&o.opsMax, "ops-max-concurrent", int(envInt("SBX_OPS_MAX_CONCURRENT", 8)), "wakes and suspends in progress at once")
 	flag.IntVar(&o.opsMinSuspend, "ops-min-suspend", int(envInt("SBX_OPS_MIN_SUSPEND", 2)), "slots kept for suspends while wakes wait")
+	flag.Float64Var(&o.prices.CPUCoreHour, "price-cpu-core-hour", envFloat("SBX_PRICE_CPU_CORE_HOUR", cost.Defaults.CPUCoreHour), "list price of a CPU core per hour, for cost metrics")
+	flag.Float64Var(&o.prices.MemoryGiBHour, "price-memory-gib-hour", envFloat("SBX_PRICE_MEMORY_GIB_HOUR", cost.Defaults.MemoryGiBHour), "list price of a GiB of memory per hour")
+	flag.Float64Var(&o.prices.DiskGiBMonth, "price-disk-gib-month", envFloat("SBX_PRICE_DISK_GIB_MONTH", cost.Defaults.DiskGiBMonth), "list price of a GiB of disk per month")
+	flag.Float64Var(&o.prices.ObjectGiBMonth, "price-object-gib-month", envFloat("SBX_PRICE_OBJECT_GIB_MONTH", cost.Defaults.ObjectGiBMonth), "list price of a GiB of object storage per month")
+	flag.DurationVar(&o.usageEvery, "storage-usage-interval", envDuration("SBX_STORAGE_USAGE_INTERVAL", 5*time.Minute), "how often object storage is listed for its size")
 	flag.Parse()
 	o.s3.AccessKey, o.s3.SecretKey = os.Getenv("SBX_S3_ACCESS_KEY"), os.Getenv("SBX_S3_SECRET_KEY")
 	o.ws.PullPolicy = corev1.PullPolicy(envOr("SBX_PULL_POLICY", string(corev1.PullIfNotPresent)))
@@ -187,6 +195,22 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		}
 		return counts, nil
 	})
+	footprint := o.ws.Footprint()
+	metrics.NewCost(ctrlmetrics.Registry, func(ctx context.Context) (cost.Summary, error) {
+		list := &sbxv1.WorkspaceList{}
+		if err := mgr.GetClient().List(ctx, list); err != nil {
+			return cost.Summary{}, err
+		}
+		all := make([]cost.Workspace, 0, len(list.Items))
+		for i := range list.Items {
+			all = append(all, workspace.Priced(&list.Items[i]))
+		}
+		return cost.Summarize(o.prices, footprint, all), nil
+	})
+	if err := mgr.Add(&usagePoller{store: snapstore.New(store), m: metrics.NewStorage(ctrlmetrics.Registry),
+		prices: o.prices, every: o.usageEvery, log: log}); err != nil {
+		return err
+	}
 	limiter := &ops.Limiter{Max: o.opsMax, MinSuspend: o.opsMinSuspend}
 	r := &workspace.Reconciler{
 		Client: mgr.GetClient(), API: mgr.GetAPIReader(), Scheme: scheme, Keys: keys,
@@ -233,6 +257,42 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 	return mgr.Start(ctx)
 }
 
+// usagePoller lists object storage now and then for the storage gauges.
+// Only the leader does it: one listing is enough.
+type usagePoller struct {
+	store  *snapstore.Store
+	m      *metrics.Storage
+	prices cost.Prices
+	every  time.Duration
+	log    *slog.Logger
+}
+
+func (u *usagePoller) NeedLeaderElection() bool { return true }
+
+func (u *usagePoller) Start(ctx context.Context) error {
+	t := time.NewTicker(u.every)
+	defer t.Stop()
+	for {
+		usage, err := u.store.Usage(ctx)
+		if err != nil {
+			u.log.Warn("listing object storage", "err", err)
+		} else {
+			var total int64
+			for kind, x := range usage {
+				u.m.Bytes.WithLabelValues(kind).Set(float64(x.Bytes))
+				u.m.Objects.WithLabelValues(kind).Set(float64(x.Objects))
+				total += x.Bytes
+			}
+			u.m.Cost.Set(u.prices.Stored(total))
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+		}
+	}
+}
+
 // brokerServer runs the broker on every replica, leader or not.
 type brokerServer struct {
 	addr string
@@ -276,6 +336,20 @@ func envBool(key string, def bool) bool {
 
 func envInt(key string, def int64) int64 {
 	if v, err := strconv.ParseInt(os.Getenv(key), 10, 64); err == nil {
+		return v
+	}
+	return def
+}
+
+func envFloat(key string, def float64) float64 {
+	if v, err := strconv.ParseFloat(os.Getenv(key), 64); err == nil {
+		return v
+	}
+	return def
+}
+
+func envDuration(key string, def time.Duration) time.Duration {
+	if v, err := time.ParseDuration(os.Getenv(key)); err == nil {
 		return v
 	}
 	return def

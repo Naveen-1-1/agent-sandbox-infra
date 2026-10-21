@@ -78,3 +78,20 @@ func TestInspectorFallsBackForDumbHTTP(t *testing.T) {
 		t.Errorf("took %s", took)
 	}
 }
+
+func TestPricingFollowsThePhase(t *testing.T) {
+	snap := &sbxv1.SnapshotRef{Bytes: 4096}
+	for phase, awake := range map[sbxv1.Phase]bool{
+		sbxv1.PhaseRunning: true, sbxv1.PhaseWaking: true, sbxv1.PhaseTearingDown: true, sbxv1.PhaseSuspended: false,
+	} {
+		ws := &sbxv1.Workspace{Status: sbxv1.WorkspaceStatus{Phase: phase, LastSnapshot: snap}}
+		got := workspace.Priced(ws)
+		if got.Awake != awake || (!awake && got.StoredBytes != 4096) || (awake && got.StoredBytes != 0) {
+			t.Errorf("%s: %+v", phase, got)
+		}
+	}
+	f := workspace.Config{}.Footprint()
+	if f.CPUCores <= 0 || f.MemoryGiB <= 0 || f.DiskGiB != 5 {
+		t.Errorf("default footprint = %+v, want the sidecar's requests and the 5Gi default disk", f)
+	}
+}
