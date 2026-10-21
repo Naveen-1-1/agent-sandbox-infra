@@ -190,6 +190,9 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 			return nil, err
 		}
 		counts := map[string]int{}
+		for _, p := range sbxv1.Phases { // zeros too, so dashboards show 0, not "no data"
+			counts[string(p)] = 0
+		}
 		for _, ws := range list.Items {
 			counts[string(ws.Status.Phase)]++
 		}
@@ -205,7 +208,13 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		for i := range list.Items {
 			all = append(all, workspace.Priced(&list.Items[i]))
 		}
-		return cost.Summarize(o.prices, footprint, all), nil
+		s := cost.Summarize(o.prices, footprint, all)
+		for _, p := range sbxv1.Phases {
+			if _, ok := s.ByPhase[string(p)]; !ok {
+				s.ByPhase[string(p)] = 0
+			}
+		}
+		return s, nil
 	})
 	if err := mgr.Add(&usagePoller{store: snapstore.New(store), m: metrics.NewStorage(ctrlmetrics.Registry),
 		prices: o.prices, every: o.usageEvery, log: log}); err != nil {

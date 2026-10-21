@@ -255,6 +255,10 @@ const (
 	PhaseFailed       Phase = "Failed"       // needs a human; see conditions
 )
 
+// Phases lists every phase, in lifecycle order.
+var Phases = []Phase{PhasePending, PhaseProvisioning, PhaseRunning, PhaseSuspending, PhaseTearingDown,
+	PhaseSuspended, PhaseWaking, PhaseDeleting, PhaseFailed}
+
 // AnnotationPaused makes the controller leave the workspace alone (for
 // maintenance or debugging); remove it to resume reconciling.
 const AnnotationPaused = "sbx.dev/paused"
