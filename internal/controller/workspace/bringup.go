@@ -46,15 +46,23 @@ func (r *Reconciler) startProvisioning(ctx context.Context, ws *sbxv1.Workspace)
 		return r.requeue()
 	}
 	now := metav1.Time{Time: r.Now()}
-	image := ws.Spec.Image
+	image, source := ws.Spec.Image, "Spec"
 	if image == "" {
-		image = r.Config.DefaultImage
+		var note string
+		image, note = r.Inspector.Devcontainer(ctx, ws.Spec.Source, base)
+		source = "Devcontainer"
+		if image == "" {
+			image, source = r.Config.DefaultImage, "Default"
+		}
+		if note != "" {
+			source += ": " + note
+		}
 	}
 	ws.Status.Base = &sbxv1.BaseStatus{
 		URL: snapshot.StripCredentials(ws.Spec.Source.RepoURL), SHA: base.SHA, Branch: base.Branch,
 		Shallow: ws.Spec.Source.Depth > 0,
 	}
-	ws.Status.ResolvedImage = image
+	ws.Status.ResolvedImage, ws.Status.ImageSource = image, source
 	ws.Status.Epoch = 1 // the broker accepts only the current epoch's tokens
 	ws.Status.ObservedWakeSeq = ws.Spec.Wake.Seq
 	ws.Status.Wake = &sbxv1.WakeStatus{TargetEpoch: 1, Trigger: sbxv1.WakeTriggerAPI, StartedAt: now}

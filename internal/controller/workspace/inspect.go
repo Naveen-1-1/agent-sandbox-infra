@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/devcontainer"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapshot"
 )
 
@@ -85,6 +87,74 @@ func (g GitInspector) Resolve(ctx context.Context, src sbxv1.Source) (Base, erro
 		return Base{SHA: refs["refs/tags/"+src.Ref], Branch: "main"}, nil
 	}
 	return Base{}, PermanentError{fmt.Errorf("ref %q not found in %s", src.Ref, snapshot.StripCredentials(src.RepoURL))}
+}
+
+// Devcontainer reads the image from devcontainer.json at the base commit.
+// A missing file means the default image; a file that needs a build, or
+// that can't be read, also falls back to it, and note says why.
+func (g GitInspector) Devcontainer(ctx context.Context, src sbxv1.Source, base Base) (image, note string) {
+	timeout := g.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	dir, err := os.MkdirTemp("", "sbx-inspect-*")
+	if err != nil {
+		return "", "couldn't read devcontainer.json: " + err.Error()
+	}
+	defer os.RemoveAll(dir)
+	if _, err := runGit(ctx, dir, "init", "-q", "--bare"); err != nil {
+		return "", "couldn't read devcontainer.json: " + err.Error()
+	}
+	// One commit's trees, without file contents, is all that's needed. A
+	// dumb HTTP server can't do that, so fall back to fetching the ref.
+	ref := src.Ref
+	if ref == "" {
+		ref = "HEAD"
+	}
+	if _, err := runGit(ctx, dir, "fetch", "-q", "--depth", "1", "--filter=blob:none", src.RepoURL, base.SHA); err != nil {
+		if _, err := runGit(ctx, dir, "fetch", "-q", src.RepoURL, ref); err != nil {
+			return "", "couldn't read devcontainer.json: " + err.Error()
+		}
+	}
+	for _, path := range devcontainer.Paths {
+		obj := base.SHA + ":" + path
+		size, err := runGit(ctx, dir, "cat-file", "-s", obj)
+		if err != nil {
+			continue // not there
+		}
+		if n, _ := strconv.Atoi(strings.TrimSpace(size)); n > devcontainer.MaxBytes {
+			return "", path + " is too large; using the default image"
+		}
+		data, err := runGit(ctx, dir, "cat-file", "blob", obj)
+		if err != nil {
+			return "", "couldn't read " + path + ": " + err.Error()
+		}
+		c, err := devcontainer.Parse([]byte(data))
+		switch {
+		case err != nil:
+			return "", err.Error() + "; using the default image"
+		case c.Unsupported != "":
+			return "", fmt.Sprintf("%s uses %s, which needs an image build; using the default image", path, c.Unsupported)
+		case c.Image == "":
+			return "", path + " names no image; using the default image"
+		}
+		return c.Image, "image from " + path
+	}
+	return "", ""
+}
+
+func runGit(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "GIT_DIR="+dir)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git %s: %w: %s", args[0], err, snapshot.Redact(strings.TrimSpace(stderr.String())))
+	}
+	return stdout.String(), nil
 }
 
 func lsRemote(ctx context.Context, args ...string) (string, error) {

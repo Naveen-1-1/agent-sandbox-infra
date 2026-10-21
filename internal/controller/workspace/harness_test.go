@@ -84,6 +84,10 @@ func (fixedInspector) Resolve(context.Context, sbxv1.Source) (workspace.Base, er
 	return workspace.Base{SHA: baseSHA, Branch: "main"}, nil
 }
 
+func (fixedInspector) Devcontainer(context.Context, sbxv1.Source, workspace.Base) (string, string) {
+	return "", ""
+}
+
 func TestMain(m *testing.M) {
 	ctrllog.SetLogger(logr.Discard())
 	var err error

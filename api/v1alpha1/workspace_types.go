@@ -307,6 +307,11 @@ type WorkspaceStatus struct {
 	// +optional
 	ResolvedImage string `json:"resolvedImage,omitempty"`
 
+	// ImageSource says where ResolvedImage came from: Spec, Devcontainer or
+	// Default, and for Default why devcontainer.json wasn't used.
+	// +optional
+	ImageSource string `json:"imageSource,omitempty"`
+
 	// Volume is the current epoch's disk.
 	// +optional
 	Volume *VolumeStatus `json:"volume,omitempty"`

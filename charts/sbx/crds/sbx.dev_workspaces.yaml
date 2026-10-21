@@ -310,6 +310,11 @@ spec:
                   and tokens.
                 format: int64
                 type: integer
+              imageSource:
+                description: |-
+                  ImageSource says where ResolvedImage came from: Spec, Devcontainer or
+                  Default, and for Default why devcontainer.json wasn't used.
+                type: string
               lastActivityAt:
                 description: |-
                   LastActivityAt is a coarse record of the last user or agent activity,

@@ -781,7 +781,7 @@ func (s *Server) patchErr(w http.ResponseWriter, err error) {
 func View(ws *sbxv1.Workspace) sbxapi.Workspace {
 	v := sbxapi.Workspace{
 		Namespace: ws.Namespace, Name: ws.Name, UID: string(ws.UID),
-		RepoURL: ws.Spec.Source.RepoURL, Ref: ws.Spec.Source.Ref, Image: ws.Status.ResolvedImage,
+		RepoURL: ws.Spec.Source.RepoURL, Ref: ws.Spec.Source.Ref, Image: ws.Status.ResolvedImage, ImageSource: ws.Status.ImageSource,
 		Mode: string(ws.Spec.Mode), Phase: string(ws.Status.Phase), Epoch: ws.Status.Epoch,
 		CreatedAt: ws.CreationTimestamp.Time, Ready: Ready(ws),
 	}

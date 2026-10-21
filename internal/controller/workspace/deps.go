@@ -63,9 +63,13 @@ type Base struct {
 	Branch string
 }
 
-// Inspector resolves a workspace's source to a base commit.
+// Inspector resolves a workspace's source to a base commit, and reads the
+// image its devcontainer.json names.
 type Inspector interface {
 	Resolve(ctx context.Context, src sbxv1.Source) (Base, error)
+	// Devcontainer returns the image to run ("" for the default) and a note
+	// on where it came from or why the file was ignored.
+	Devcontainer(ctx context.Context, src sbxv1.Source, base Base) (image, note string)
 }
 
 // PermanentError marks a failure retrying won't fix (e.g. no such branch).

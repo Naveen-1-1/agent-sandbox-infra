@@ -31,6 +31,7 @@ type Workspace struct {
 	RepoURL      string      `json:"repoURL"`
 	Ref          string      `json:"ref,omitempty"`
 	Image        string      `json:"image,omitempty"`
+	ImageSource  string      `json:"imageSource,omitempty"` // Spec, Devcontainer or Default, and why
 	Mode         string      `json:"mode"`
 	Phase        string      `json:"phase"`
 	Epoch        int64       `json:"epoch"`
