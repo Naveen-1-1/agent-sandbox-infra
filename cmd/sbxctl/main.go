@@ -8,6 +8,7 @@
 //	sbxctl cat NS/NAME PATH            sbxctl put NS/NAME PATH < file
 //	sbxctl wake | wake-hint | turn-ended | suspend | delete | token NS/NAME
 //	sbxctl wait NS/NAME PHASE [--timeout 3m]
+//	sbxctl demo [--image IMG] [--thinking 10s] [--after-turn 5s] [--keep]   (admin token)
 //
 // The gateway URL and token come from --gateway/--token or SBX_GATEWAY and
 // SBX_TOKEN (the admin token, or a workspace's own token).
@@ -25,6 +26,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/demo"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/sbxapi"
 )
 
@@ -152,6 +154,28 @@ func run(args []string) error {
 			return err
 		}
 		return c.WriteFile(ctx, ns, name, rest[1], data)
+
+	case "demo":
+		fs := flag.NewFlagSet("demo", flag.ContinueOnError)
+		o := demo.Options{Out: os.Stdout}
+		fs.StringVar(&o.RepoURL, "repo", "http://sbx-fixtures.sbx-system.svc/hello-node.git", "repository to start from")
+		fs.StringVar(&o.Image, "image", "", "workload image (needs git; default: the platform's)")
+		fs.StringVar(&o.Name, "name", "", "workspace name (default: generated)")
+		fs.StringVar(&o.Namespace, "namespace", "", "namespace (default: the gateway's)")
+		fs.DurationVar(&o.Thinking, "thinking", 10*time.Second, "how long the simulated LLM thinks before its first command")
+		fs.DurationVar(&o.AfterTurn, "after-turn", 5*time.Second, "how soon the workspace sleeps after a turn ends")
+		fs.BoolVar(&o.Keep, "keep", false, "keep the workspace afterwards")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		if *asJSON {
+			o.Out = io.Discard
+		}
+		res, err := demo.Run(ctx, c, o)
+		if *asJSON && res != nil {
+			_ = printJSON(res)
+		}
+		return err
 
 	case "wait":
 		ns, name, err := target(rest)

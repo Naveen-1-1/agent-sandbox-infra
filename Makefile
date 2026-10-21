@@ -148,3 +148,17 @@ deploy: push ## Build, push and install the platform (VALUES=deploy/values/kind.
 .PHONY: undeploy
 undeploy: ## Uninstall the platform (CRDs and the signing key are kept).
 	helm uninstall sbx --namespace $(NAMESPACE)
+
+##@ Demo
+
+DEMO_IMAGE ?= mcr.microsoft.com/devcontainers/javascript-node:22
+DEMO_ARGS  ?=
+
+.PHONY: demo
+demo: ## Play an agent session that sleeps and wakes (run `make kind-up deploy` first).
+	@runtime=$$(kubectl -n $(NAMESPACE) get deploy sbx-controller \
+	  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SBX_RUNTIME_IMAGE")].value}'); \
+	  KIND_CLUSTER=$(KIND_CLUSTER) hack/prepull.sh "$$runtime" "$(DEMO_IMAGE)"
+	$(GO) build -o bin/sbxctl ./cmd/sbxctl
+	@SBX_TOKEN=$$(kubectl -n $(NAMESPACE) get secret sbx-gateway-admin -o jsonpath='{.data.token}' | base64 -d) \
+	  bin/sbxctl demo --image $(DEMO_IMAGE) $(DEMO_ARGS)
