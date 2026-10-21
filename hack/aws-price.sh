@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Print an instance type's hourly price in us-east-1: the on-demand list
-# price, or for SPOT the current average across zones.
+# Print an instance type's hourly price: the on-demand list price in
+# us-east-1 and us-east-2 (the same in both), or for SPOT the current
+# average across the region's zones.
 # Usage: hack/aws-price.sh INSTANCE_TYPE ON_DEMAND|SPOT [REGION]
 set -euo pipefail
 itype=${1:?usage: aws-price.sh INSTANCE_TYPE ON_DEMAND|SPOT [REGION]} capacity=${2:-ON_DEMAND} region=${3:-us-east-1}

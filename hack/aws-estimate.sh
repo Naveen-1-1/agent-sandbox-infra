@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Estimate what an AWS plan costs per hour while it runs, at us-east-1 list
-# prices: the EKS control plane, the nodes (spot at the current price), their
+# Estimate what an AWS plan costs per hour while it runs, at us-east-1 and
+# us-east-2 list prices (the same in both): the EKS control plane, the nodes (spot at the current price), their
 # disks and public IPv4 addresses, and one workspace disk. S3 and ECR hold a
 # few hundred MB to a few GB: under a cent a day. No NAT gateway or load
 # balancer is planned (it says so if one is).

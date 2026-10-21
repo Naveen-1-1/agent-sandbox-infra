@@ -11,7 +11,8 @@
 #   cost-actual what Cost Explorer billed the run (FROM=YYYY-MM-DD [TO=YYYY-MM-DD])
 #
 # Credentials come from your AWS CLI setup (profile, aws login, SSO) and are
-# never printed. Everything is in one region and tagged project=sbx, run=<run>.
+# never printed. Everything is in one region (AWS_REGION, by default your
+# profile's) and tagged project=sbx, run=<run>.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

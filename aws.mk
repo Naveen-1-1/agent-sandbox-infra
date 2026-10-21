@@ -6,7 +6,8 @@
 ##@ AWS
 
 AWS_ENV = RUN=$(RUN) AWS_REGION=$(AWS_REGION) AWS_NODES=$(AWS_NODES) AWS_CAPACITY=$(AWS_CAPACITY) APPROVED=$(APPROVED)
-AWS_REGION   ?= us-east-1
+# The AWS CLI profile's region (accounts are often limited to one), else us-east-1.
+AWS_REGION   ?= $(or $(shell aws configure get region 2>/dev/null),us-east-1)
 AWS_NODES    ?= 2
 AWS_CAPACITY ?= ON_DEMAND
 
