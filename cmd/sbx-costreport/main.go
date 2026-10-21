@@ -336,7 +336,8 @@ type actualCost struct {
 	ByService map[string]float64 `json:"byService"`
 }
 
-// modeledCost is what the platform's own metrics said over the same run.
+// modeledCost is what the platform's own numbers say a run cost: its
+// metrics over the window, and its nodes and control plane at list price.
 type modeledCost struct {
 	Start         string  `json:"start"`
 	End           string  `json:"end"`
@@ -365,7 +366,7 @@ func writeValidation(w io.Writer, actualPath, modeledPath string) error {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 	}
-	p("Run `%s`, billed %s to %s (Cost Explorer, filtered by the run tag) against what the platform measured over the bench window %s to %s.\n", a.Run, a.Start, a.End, m.Start, m.End)
+	p("Run `%s`, billed %s to %s (Cost Explorer, filtered by the run tag), against the platform's own numbers from %s to %s.\n", a.Run, a.Start, a.End, m.Start, m.End)
 	p("| | USD |")
 	p("|---|---:|")
 	p("| Billed in total (tagged resources) | $%.4f |", a.TotalUsd)
@@ -381,6 +382,6 @@ func writeValidation(w io.Writer, actualPath, modeledPath string) error {
 	p("| sbx_object_store_cost_usd_per_hour over the window | $%.4f |", m.StorageUsd)
 	p("| Nodes at list price (%.2f node-hours) | $%.4f |", m.NodeHours, m.NodeUsd)
 	p("| EKS control plane | $%.4f |", m.ControlUsd)
-	p("\nThe platform's metric prices what workspaces request, not the nodes they run on: the gap to the bill is idle node capacity, the platform's own pods, the control plane, and the setup and teardown outside the bench window.")
+	p("\nThe platform's metric prices what workspaces request, not the nodes they run on: the gap between it and the bill is idle node capacity, the platform's own pods and the control plane. Nodes and control plane at list price should come close to the bill; what's left is disks, public addresses and requests.")
 	return nil
 }
