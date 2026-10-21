@@ -17,6 +17,10 @@ images:
 
 controller:
   replicas: 1
+  serviceAccount:
+    # For example eks.amazonaws.com/role-arn with IRSA; EKS Pod Identity
+    # needs none (it matches the namespace and name, <release>-controller).
+    annotations: {}
   leaderElect: true
   maxConcurrentReconciles: 16
   brokerPort: 9443
@@ -82,6 +86,11 @@ s3:
   bucket: sbx
   pathStyle: true
   createBucket: true
+  # How the controller authenticates: "secret" reads accessKey and secretKey
+  # from existingSecret; "ambient" takes credentials from its pod's
+  # environment (EKS Pod Identity, IRSA), with no Secret. An empty endpoint
+  # with s3local off means AWS S3 in region.
+  credentials: secret
   # Secret with keys accessKey and secretKey. Empty with s3local.enabled uses its generated Secret.
   existingSecret: ""
 

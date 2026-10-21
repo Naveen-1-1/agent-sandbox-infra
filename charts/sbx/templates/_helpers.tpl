@@ -15,10 +15,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default (printf "%s-master-key" .Release.Name) .Values.signing.existingSecret -}}
 {{- end -}}
 
+{{/* sbx.s3Endpoint is the S3 endpoint; empty means AWS S3 in s3.region. */}}
 {{- define "sbx.s3Endpoint" -}}
 {{- if .Values.s3.endpoint }}{{ .Values.s3.endpoint }}
 {{- else if .Values.s3local.enabled }}http://{{ .Release.Name }}-s3.{{ .Release.Namespace }}.svc:8333
-{{- else }}{{ fail "set s3.endpoint (or enable s3local)" }}{{ end -}}
+{{- end -}}
+{{- end -}}
+
+{{/* sbx.s3Ambient is "true" when the controller takes S3 credentials from its pod's environment. */}}
+{{- define "sbx.s3Ambient" -}}
+{{- $mode := .Values.s3.credentials | default "secret" -}}
+{{- if not (has $mode (list "secret" "ambient")) }}{{ fail (printf "s3.credentials must be secret or ambient, not %q" $mode) }}{{ end -}}
+{{- if and (eq $mode "ambient") .Values.s3local.enabled }}{{ fail "the bundled object store (s3local) needs s3.credentials: secret" }}{{ end -}}
+{{- if eq $mode "ambient" }}true{{ end -}}
 {{- end -}}
 
 {{- define "sbx.s3Secret" -}}
