@@ -125,13 +125,9 @@ func (r *Reconciler) bringUp(ctx context.Context, ws *sbxv1.Workspace) (reconcil
 		return r.requeue()
 	}
 
-	// 4. Wait for this epoch's pod to be ready. Dependencies start
-	// restoring as soon as the workload container runs.
-	pod, ready, err := r.epochPod(ctx, ws, sb, target)
-	if pod != nil {
-		r.kickDeps(ctx, ws, pod, target)
-	}
-	if err != nil || !ready {
+	// 4. Wait for this epoch's pod to be ready.
+	pod, err := r.readyPod(ctx, ws, sb, target)
+	if err != nil || pod == nil {
 		return reconcile.Result{RequeueAfter: r.Config.Poll}, err
 	}
 
@@ -197,20 +193,21 @@ func (r *Reconciler) filesReady(ctx context.Context, ws *sbxv1.Workspace, pod *c
 }
 
 // readyPod returns the Sandbox's pod once it serves epoch and is ready.
-// epochPod returns this epoch's pod once it exists, and whether it (and
-// its Sandbox) is ready to serve.
-func (r *Reconciler) epochPod(ctx context.Context, ws *sbxv1.Workspace, sb *sbv1.Sandbox, epoch int64) (*corev1.Pod, bool, error) {
+func (r *Reconciler) readyPod(ctx context.Context, ws *sbxv1.Workspace, sb *sbv1.Sandbox, epoch int64) (*corev1.Pod, error) {
+	if !meta.IsStatusConditionTrue(sb.Status.Conditions, string(sbv1.SandboxConditionReady)) {
+		return nil, nil
+	}
 	pod := &corev1.Pod{}
 	if err := r.API.Get(ctx, client.ObjectKey{Namespace: ws.Namespace, Name: sandboxName(ws)}, pod); err != nil {
-		return nil, false, client.IgnoreNotFound(err)
+		return nil, client.IgnoreNotFound(err)
 	}
 	if pod.Labels[podspec.LabelEpoch] != strconv.FormatInt(epoch, 10) || !pod.DeletionTimestamp.IsZero() || pod.Status.PodIP == "" {
-		return nil, false, nil
+		return nil, nil
 	}
-	c := podCondition(pod, corev1.PodReady)
-	ready := c != nil && c.Status == corev1.ConditionTrue &&
-		meta.IsStatusConditionTrue(sb.Status.Conditions, string(sbv1.SandboxConditionReady))
-	return pod, ready, nil
+	if c := podCondition(pod, corev1.PodReady); c == nil || c.Status != corev1.ConditionTrue {
+		return nil, nil
+	}
+	return pod, nil
 }
 
 // podGone reports whether the workspace's pod no longer exists (or, if uid

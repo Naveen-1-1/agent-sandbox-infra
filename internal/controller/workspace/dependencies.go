@@ -40,22 +40,9 @@ func workloadImageID(pod *corev1.Pod) string {
 	return ""
 }
 
-// kickDeps starts the dependency restore as soon as the workload's image
-// is known, without waiting for the pod to be ready. Best effort:
-// trackDeps starts it anyway once the workspace runs.
-func (r *Reconciler) kickDeps(ctx context.Context, ws *sbxv1.Workspace, pod *corev1.Pod, epoch int64) {
-	image := workloadImageID(pod)
-	if image == "" || pod.Status.PodIP == "" || !sbxv1.DepsPending(ws) {
-		return
-	}
-	rctx, cancel := r.rpcCtx(ctx)
-	defer cancel()
-	if _, err := r.Pods.Sidecar(ws, Pod{IP: pod.Status.PodIP, Epoch: epoch}).StartDeps(rctx, image); err != nil {
-		logger(ctx, ws).V(1).Info("starting the dependency restore early failed", "err", err.Error())
-	}
-}
-
-// trackDeps follows this epoch's dependency restore until it settles. It
+// trackDeps starts this epoch's dependency restore and follows it until it
+// settles. The cache key needs the workload's image digest, which the pod
+// reports at about the time it turns ready, so the restore starts then. It
 // reports whether status changed (with hooks to run once it is saved) and
 // whether the restore is still pending.
 func (r *Reconciler) trackDeps(ctx context.Context, ws *sbxv1.Workspace, pod *corev1.Pod) (changed bool, after func(), pending bool) {
