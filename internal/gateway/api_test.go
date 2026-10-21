@@ -486,7 +486,7 @@ func (e *env) setDeps(t *testing.T, ws *sbxv1.Workspace, profile, reason string)
 	if err := k8s.Get(context.Background(), client.ObjectKeyFromObject(ws), cur); err != nil {
 		t.Fatal(err)
 	}
-	cur.Status.Deps = &sbxv1.DepsStatus{Profile: profile}
+	cur.Status.Deps = &sbxv1.DepsStatus{Profile: profile, Key: "k-" + profile, Source: sbxv1.DepsSourceCache, Bytes: 4096}
 	st := metav1.ConditionFalse
 	if reason == sbxv1.DepsReasonReady {
 		st = metav1.ConditionTrue
@@ -545,7 +545,8 @@ func TestOnlyCommandsThatNeedDependenciesWait(t *testing.T) {
 			t.Fatal("held commands weren't released when the restore finished")
 		}
 	}
-	if w, err := own.Get(ctx(t), e.ns, "deps"); err != nil || w.Deps == nil || w.Deps.Pending || !w.Deps.Ready || w.Deps.Profile != "npm" {
+	if w, err := own.Get(ctx(t), e.ns, "deps"); err != nil || w.Deps == nil || w.Deps.Pending || !w.Deps.Ready || w.Deps.Profile != "npm" ||
+		w.Deps.Source != sbxv1.DepsSourceCache || w.Deps.Key != "k-npm" || w.Deps.Bytes != 4096 {
 		t.Errorf("view deps = %+v, %v", w.Deps, err)
 	}
 }

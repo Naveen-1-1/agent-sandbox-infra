@@ -869,7 +869,7 @@ func View(ws *sbxv1.Workspace) sbxapi.Workspace {
 	if c := meta.FindStatusCondition(ws.Status.Conditions, sbxv1.ConditionDepsReady); c != nil && ws.Status.Phase == sbxv1.PhaseRunning {
 		v.Deps = &sbxapi.Deps{Pending: sbxv1.DepsPending(ws), Ready: c.Status == metav1.ConditionTrue, Message: c.Message}
 		if d := ws.Status.Deps; d != nil {
-			v.Deps.Profile, v.Deps.Source = d.Profile, d.Source
+			v.Deps.Profile, v.Deps.Source, v.Deps.Key, v.Deps.Bytes = d.Profile, d.Source, d.Key, d.Bytes
 		}
 	}
 	if sl := ws.Status.Sleep; sl != nil {

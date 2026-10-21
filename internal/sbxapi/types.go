@@ -54,6 +54,10 @@ type Workspace struct {
 type Deps struct {
 	Profile string `json:"profile,omitempty"` // npm, pip, uv; empty if none
 	Source  string `json:"source,omitempty"`  // None, Present, Cache or Install
+	// Key names the shared cache archive: lockfile, image digest and arch.
+	Key string `json:"key,omitempty"`
+	// Bytes is the archive size downloaded for a cache hit.
+	Bytes int64 `json:"bytes,omitempty"`
 	// Pending means commands that need the dependencies are held.
 	Pending bool   `json:"pending"`
 	Ready   bool   `json:"ready"`
