@@ -155,10 +155,17 @@ rebuilds the counts, and a slot nobody reports for a while is reclaimed.
 One epoch of a workspace is one upstream `Sandbox` pod, built by a pure function and
 pinned by a golden file. Its containers start in order:
 
-1. `sbx-tools` copies our binaries into a shared volume.
-2. `sbx-restore` puts the files on this epoch's disk.
-3. `sbx-sidecar` runs as a native sidecar.
-4. The user's image runs with `sbx-agent` as PID 1, mounting the disk at `/workspace`.
+1. `sbx-restore` puts the files on this epoch's disk.
+2. `sbx-sidecar` runs as a native sidecar.
+3. The user's image runs with `sbx-agent` as PID 1, mounting the disk at `/workspace`.
+
+The user's image runs our agent and editor from `/sbx`. That is mounted read-only from the
+sbx-runtime image as an *image volume*, so nothing is copied and the editor's few hundred
+MB cost a wake nothing. Clusters without image volumes (before Kubernetes 1.35) can set
+`workspace.tools: copy` instead, which copies `/sbx` in a first init container. The image
+is chosen in this order: `spec.image`; the repository's `devcontainer.json` (`image` only,
+since building images isn't supported); then the platform default. `status.imageSource`
+says which, and why a `devcontainer.json` was ignored.
 
 Kubernetes guarantees the workload never starts before its files exist. The disk's mount
 root is owned by root on every storage driver, so the workload's git is told through its
@@ -223,6 +230,19 @@ caught. A freeze with a lease thaws itself if the controller disappears before c
 once a suspend is committed, the controller re-freezes without a lease. All calls need the
 per-epoch agent token except `/v1/health`.
 
+### Editor (code-server in the agent, `extensions/vscode-activity`)
+
+Each workspace has a VS Code editor in the browser: code-server, started by the agent the
+first time someone opens it, listening only on loopback. The agent proxies it at
+`/sbx/editor/`, and any app port at `/sbx/port/<port>/`, behind the agent token. The
+gateway then serves them on hosts of their own (see the gateway).
+
+Only real input counts as activity. A small extension reports edits (at most one every
+five seconds), saves, and terminal commands starting and ending to a loopback-only agent
+endpoint. A terminal command keeps the workspace up the way an exec does, and is dropped
+if the extension stops reminding the agent it is running. An editor tab that is open but
+idle reports nothing, and its WebSocket doesn't keep the workspace awake.
+
 ### Sidecar (`cmd/sbx-sidecar`, `internal/sidecar`)
 
 Our container in every workspace pod, next to the user's image, which can be any
@@ -274,6 +294,19 @@ needs the pod while the workspace is asleep is *held*:
   that run the profile's programs, or that ask with `waitFor: ["deps"]`. `ls`, `cat` and
   `git` run as soon as the pod serves. A failed restore releases the waiting commands, so
   they run and report the error.
+
+**Workspace hosts.** Browsers reach a workspace's editor at `<name>.<namespace>.<domain>`,
+and an app port at `<port>.<name>.<namespace>.<domain>` (`*.sbx.localhost` on kind, which
+browsers resolve to loopback). Each host gets its own cookies and origin:
+
+- **Sign-in.** A sign-in link from the API (`sbxctl editor`) carries a five-minute ticket.
+  The gateway swaps it for an HttpOnly cookie bound to that host that expires after 12 hours.
+- **Bearer tokens.** Scripts can send the workspace token instead of a cookie.
+- **Origin checks.** Cookie-borne WebSocket upgrades and writes must come from the host's
+  own pages.
+- **Wake rule.** Only a person opening the page (a top-level navigation) wakes a sleeping
+  workspace. Reconnects from a tab left open, polls, assets and iframes get a 503, so a
+  forgotten tab never keeps a workspace awake or wakes it.
 
 Status reads, `/healthz`, `/readyz` and `/metrics` never wake anything; the health and
 metrics endpoints are on a separate admin port. Each replica also keeps the traffic signals

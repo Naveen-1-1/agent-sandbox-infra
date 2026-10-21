@@ -13,7 +13,7 @@ Built on [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agen
 ## Requirements
 
 - macOS or Linux with Docker (6 CPUs / 10 GB RAM recommended for the full stack)
-- Go ≥ 1.26, kind, helm, kubectl, node ≥ 20
+- Go ≥ 1.26, kind, helm, kubectl, node ≥ 24 (for the editor extension's build and tests)
 
 ```bash
 brew install go kind helm kubectl node
@@ -70,6 +70,21 @@ bin/sbxctl list
 `create` prints a token scoped to that one workspace. An agent harness uses it in place of
 the admin token.
 
+### Editor
+
+Every workspace has VS Code in the browser. On kind it is at
+`http://<name>.<namespace>.sbx.localhost:8080/`, and `sbxctl editor` prints a sign-in link:
+
+```bash
+bin/sbxctl editor sbx-workspaces/demo              # the editor
+bin/sbxctl editor --port 3000 sbx-workspaces/demo  # an app port inside the workspace
+```
+
+Opening the link wakes a sleeping workspace. An editor tab left open doesn't keep it awake.
+Typing, saving and running terminal commands count as activity. Browsers resolve
+`*.localhost` to 127.0.0.1 by themselves. Safari is the exception, so use another browser
+or add a hosts entry.
+
 ### Dependencies and services
 
 A workspace whose repository has a `package-lock.json`, `uv.lock` or `requirements.txt`
@@ -109,7 +124,8 @@ The chart's defaults are under `policy:` in `charts/sbx/values.yaml`. A broken
 
 | Command | What it does |
 |---|---|
-| `make test` | Unit tests with `-race` and goroutine-leak checks |
+| `make test` | Unit tests with `-race` and goroutine-leak checks, and the editor extension's |
+| `make extension` | Type-check, test and build the editor activity extension |
 | `make lint` | golangci-lint (tools are pinned in `tools.mod`) |
 | `make test-e2e` | End-to-end tests against the deployed cluster (`RUN=<regex>`) |
 | `make demo` | Play an agent session against the deployed cluster |
