@@ -178,6 +178,13 @@ func Build(in Input) (sbv1.PodTemplate, error) {
 				{Name: "SBX_AGENT_TOKEN_SHA256", Value: in.AgentTokenSHA256},
 				{Name: "SBX_AGENT_GRPC_ADDR", Value: fmt.Sprintf(":%d", AgentGRPCPort)},
 				{Name: "SBX_AGENT_REST_ADDR", Value: fmt.Sprintf(":%d", AgentRESTPort)},
+				// The disk's mount root is owned by root on every storage
+				// driver, so git would refuse the repository ("dubious
+				// ownership"). Config from the environment counts as
+				// command-line config, which is where safe.directory is honored.
+				{Name: "GIT_CONFIG_COUNT", Value: "1"},
+				{Name: "GIT_CONFIG_KEY_0", Value: "safe.directory"},
+				{Name: "GIT_CONFIG_VALUE_0", Value: WorkspaceDir},
 			},
 			Ports: []corev1.ContainerPort{
 				{Name: "agent-grpc", ContainerPort: AgentGRPCPort},

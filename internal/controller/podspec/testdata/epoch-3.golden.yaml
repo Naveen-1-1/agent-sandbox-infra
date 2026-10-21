@@ -16,6 +16,12 @@ spec:
       value: :9090
     - name: SBX_AGENT_REST_ADDR
       value: :8080
+    - name: GIT_CONFIG_COUNT
+      value: "1"
+    - name: GIT_CONFIG_KEY_0
+      value: safe.directory
+    - name: GIT_CONFIG_VALUE_0
+      value: /workspace
     image: mcr.microsoft.com/devcontainers/base:bookworm
     imagePullPolicy: IfNotPresent
     name: workspace
