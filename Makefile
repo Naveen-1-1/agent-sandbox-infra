@@ -203,6 +203,31 @@ bench: ## Measure the platform on the real repositories in test/bench/repos.json
 	$(GO) build -o bin/sbx-bench ./cmd/sbx-bench
 	NAMESPACE=$(NAMESPACE) hack/bench.sh --env kind $(BENCH_ARGS)
 
+##@ Cost report
+
+TRACELAB_URL    := https://github.com/uw-syfi/TraceLab/releases/download/v0.0.1/syfi_coding_trace.duckdb
+TRACELAB_SHA256 := 97715265367cc72376475f5d444c8e1900b88cab1482aa7b9a742894d9f15619
+TRACELAB_DB     := data/tracelab/syfi_coding_trace.duckdb
+TRACE_JSONL     := data/costsim/trace.jsonl
+COST_ARGS       ?=
+
+$(TRACELAB_DB):
+	@mkdir -p $(@D)
+	curl -fL --retry 3 -o $@.part $(TRACELAB_URL)
+	echo "$(TRACELAB_SHA256)  $@.part" | shasum -a 256 -c - >/dev/null
+	mv $@.part $@
+
+.PHONY: tracelab-data
+tracelab-data: $(TRACELAB_DB) ## Download the TraceLab v0.0.1 coding-agent traces into data/ (95 MiB, checksum-checked).
+
+$(TRACE_JSONL): $(TRACELAB_DB) hack/costreport/export.sql
+	@mkdir -p $(@D)
+	duckdb -readonly $(TRACELAB_DB) -c ".read hack/costreport/export.sql"
+
+.PHONY: cost-report
+cost-report: $(TRACE_JSONL) ## Price sleep policies on the TraceLab sessions with the latest bench; writes notes/cost-report-<date>.{md,json} (needs duckdb).
+	$(GO) run ./cmd/sbx-costreport --trace $(TRACE_JSONL) $(COST_ARGS)
+
 .PHONY: ui
 ui: ## Print a link that opens the web UI signed in as admin (run `make kind-up deploy` first).
 	@$(GO) build -o bin/sbxctl ./cmd/sbxctl

@@ -1,6 +1,9 @@
 # Local-only docs: plans, phase notes, ADRs, scratch. Never committed.
 notes/
 
+# Downloaded datasets and their exports (make tracelab-data)
+data/
+
 # IDE and OS files
 .idea/
 .vscode/
