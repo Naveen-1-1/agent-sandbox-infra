@@ -26,6 +26,7 @@ import (
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/podspec"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/policy"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/sbxapi"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/token"
 )
@@ -390,6 +391,13 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 			Image:  req.Image, Mode: sbxv1.Mode(req.Mode),
 		},
 	}
+	if p := req.Policy; p != nil {
+		if _, err := policy.New(p.Name, p.Params); err != nil {
+			writeErr(w, http.StatusBadRequest, sbxapi.CodeInvalid, "policy: "+err.Error())
+			return
+		}
+		ws.Spec.Policy = &sbxv1.PolicyRef{Name: p.Name, Params: p.Params}
+	}
 	if err := s.client.Create(r.Context(), ws); err != nil {
 		code := http.StatusBadRequest
 		if apierrors.IsAlreadyExists(err) {
@@ -618,6 +626,12 @@ func View(ws *sbxv1.Workspace) sbxapi.Workspace {
 	}
 	if s := ws.Status.LastSnapshot; s != nil {
 		v.LastSnapshot = &sbxapi.Snapshot{Seq: s.Seq, Bytes: s.Bytes, CreatedAt: timePtr(s.CreatedAt)}
+	}
+	if p := ws.Spec.Policy; p != nil {
+		v.Policy = &sbxapi.PolicyRef{Name: p.Name, Params: p.Params}
+	}
+	if sl := ws.Status.Sleep; sl != nil {
+		v.Sleep = &sbxapi.Sleep{Policy: sl.Policy, Reason: sl.Reason, Message: sl.Message, SuspendAt: timePtr(sl.SuspendAt)}
 	}
 	if t := ws.Status.Timeline; t != nil {
 		v.Timeline = &sbxapi.Timeline{

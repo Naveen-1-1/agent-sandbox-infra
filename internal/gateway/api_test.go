@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -275,6 +276,31 @@ func TestCreateListDelete(t *testing.T) {
 	}
 	if err := e.admin.Delete(ctx(t), e.ns, resp.Workspace.Name); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCreateWithAPolicy(t *testing.T) {
+	e := start(t, gateway.Config{}, 0)
+	_, err := e.admin.Create(ctx(t), sbxapi.CreateRequest{RepoURL: "https://example.com/repo.git",
+		Policy: &sbxapi.PolicyRef{Name: "fixed", Params: map[string]string{"idleTimout": "1m"}}})
+	var se *sbxapi.StatusError
+	if !errors.As(err, &se) || se.Status != http.StatusBadRequest || !strings.Contains(se.Body.Error, "idleTimout") {
+		t.Fatalf("a misspelled parameter: %v, want 400 naming it", err)
+	}
+	resp, err := e.admin.Create(ctx(t), sbxapi.CreateRequest{RepoURL: "https://example.com/repo.git",
+		Policy: &sbxapi.PolicyRef{Name: "fixed", Params: map[string]string{"idleTimeout": "1m"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := &sbxv1.Workspace{}
+	if err := k8s.Get(ctx(t), client.ObjectKey{Namespace: e.ns, Name: resp.Workspace.Name}, ws); err != nil {
+		t.Fatal(err)
+	}
+	if p := ws.Spec.Policy; p == nil || p.Name != "fixed" || p.Params["idleTimeout"] != "1m" {
+		t.Fatalf("spec.policy = %+v", p)
+	}
+	if p := resp.Workspace.Policy; p == nil || p.Name != "fixed" {
+		t.Fatalf("view policy = %+v", p)
 	}
 }
 

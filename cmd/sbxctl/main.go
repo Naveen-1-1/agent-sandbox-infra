@@ -1,6 +1,7 @@
 // Command sbxctl talks to the sbx gateway.
 //
 //	sbxctl create --repo URL [--ref REF] [--image IMG] [--name N] [--namespace NS]
+//	              [--policy fixed --param idleTimeout=5m ...]
 //	sbxctl list
 //	sbxctl get NS/NAME
 //	sbxctl exec NS/NAME -- COMMAND [ARGS...]
@@ -62,8 +63,23 @@ func run(args []string) error {
 		fs.StringVar(&r.Name, "name", "", "workspace name (default: generated)")
 		fs.StringVar(&r.Namespace, "namespace", "", "namespace (default: the gateway's)")
 		fs.StringVar(&r.Mode, "mode", "", "Auto, AlwaysOn or Off")
+		pol := fs.String("policy", "", "sleep policy for this workspace (default: the cluster's)")
+		params := map[string]string{}
+		fs.Func("param", "sleep policy parameter as key=value (repeatable)", func(v string) error {
+			k, val, ok := strings.Cut(v, "=")
+			if !ok {
+				return errors.New("want key=value")
+			}
+			params[k] = val
+			return nil
+		})
 		if err := fs.Parse(rest); err != nil {
 			return err
+		}
+		if *pol != "" {
+			r.Policy = &sbxapi.PolicyRef{Name: *pol, Params: params}
+		} else if len(params) > 0 {
+			return errors.New("--param needs --policy")
 		}
 		resp, err := c.Create(ctx, r)
 		if err != nil {
@@ -84,9 +100,9 @@ func run(args []string) error {
 			return printJSON(list)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-		fmt.Fprintln(tw, "WORKSPACE\tPHASE\tEPOCH\tNODE\tREPO")
+		fmt.Fprintln(tw, "WORKSPACE\tPHASE\tEPOCH\tNODE\tSLEEP\tREPO")
 		for _, w := range list {
-			fmt.Fprintf(tw, "%s/%s\t%s\t%d\t%s\t%s\n", w.Namespace, w.Name, w.Phase, w.Epoch, w.Node, w.RepoURL)
+			fmt.Fprintf(tw, "%s/%s\t%s\t%d\t%s\t%s\t%s\n", w.Namespace, w.Name, w.Phase, w.Epoch, w.Node, sleepSummary(w.Sleep), w.RepoURL)
 		}
 		return tw.Flush()
 
@@ -198,6 +214,17 @@ func run(args []string) error {
 		return err
 	}
 	return fmt.Errorf("unknown command %q", cmd)
+}
+
+// sleepSummary is the sleep verdict in a few words, e.g. "Active (4m10s)".
+func sleepSummary(s *sbxapi.Sleep) string {
+	if s == nil {
+		return "-"
+	}
+	if s.SuspendAt != nil {
+		return fmt.Sprintf("%s (%s)", s.Reason, time.Until(*s.SuspendAt).Round(time.Second))
+	}
+	return s.Reason
 }
 
 func target(args []string) (ns, name string, err error) {

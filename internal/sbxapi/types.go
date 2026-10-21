@@ -38,7 +38,23 @@ type Workspace struct {
 	Conditions   []Condition `json:"conditions,omitempty"`
 	LastSnapshot *Snapshot   `json:"lastSnapshot,omitempty"`
 	Timeline     *Timeline   `json:"timeline,omitempty"`
+	Policy       *PolicyRef  `json:"policy,omitempty"` // its own policy, if not the cluster's
+	Sleep        *Sleep      `json:"sleep,omitempty"`
 	CreatedAt    time.Time   `json:"createdAt"`
+}
+
+// PolicyRef names a sleep policy and its parameters.
+type PolicyRef struct {
+	Name   string            `json:"name"`
+	Params map[string]string `json:"params,omitempty"`
+}
+
+// Sleep is the sleep policy's latest verdict on a workspace.
+type Sleep struct {
+	Policy    string     `json:"policy,omitempty"`
+	Reason    string     `json:"reason"`
+	Message   string     `json:"message,omitempty"`
+	SuspendAt *time.Time `json:"suspendAt,omitempty"`
 }
 
 // Condition mirrors a Kubernetes condition.
@@ -74,6 +90,8 @@ type CreateRequest struct {
 	Depth     int32  `json:"depth,omitempty"`
 	Image     string `json:"image,omitempty"`
 	Mode      string `json:"mode,omitempty"`
+	// Policy overrides the cluster's sleep policy for this workspace.
+	Policy *PolicyRef `json:"policy,omitempty"`
 }
 
 // CreateResponse is the new workspace and its token.
