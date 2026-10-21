@@ -412,8 +412,39 @@ only the workspace's own token:
 
 Each wake prints a timeline from the request to pod scheduled, files restored, serving and
 the first command. The demo checks that the git state after every sleep matches the state
-before it. `make demo` pre-pulls the images onto the kind workers first, so the wakes
-measure restore time, not image download. An e2e test runs the same session.
+before it. `make demo` pre-pulls the images onto every node that runs workspaces first (a
+short-lived DaemonSet), so the wakes measure restore time, not image download. An e2e test
+runs the same session.
+
+### Benchmark (`internal/bench`, `cmd/sbx-bench`, `make bench`)
+
+Measures the platform on real repositories pinned to commits (`test/bench/repos.json`): a
+Python ML project with torch (pip), a TypeScript app (npm) and a small library (uv). For
+each, one at a time:
+
+1. **Cold start.** It wipes that repository's cached base bundle and dependency archives,
+   creates a workspace and records the clone, the start and the dependency install.
+2. **Cycle 0.** The first suspend uploads the dependency archive, and the first wake
+   restores it. It is recorded apart, as no later cycle looks like it.
+3. **Ten cycles.** Each edits a tracked file, suspends, and wakes with a command that needs
+   the dependencies. Odd cycles send a wake-hint and then "think" for 10 seconds; even ones
+   send the command straight away.
+
+Each cycle records the suspend time, the wake's stages from its request (files restored,
+serving, dependencies), how long the command was held, the bundle size, the S3 requests
+(PUT and GET class), and the CPU time and peak memory of the sidecar and the agent.
+
+- **Counters, not scrapes.** S3 requests come from counters the controller keeps for its own
+  calls and for the presigned URLs it hands to pods. The bench reads them from every
+  controller replica through the API server's pod proxy, so a cycle's count is exact.
+- **Usage.** The sidecar's CPU and memory come from its own `/proc`, read with
+  `kubectl exec`. The agent's come through the gateway: its supervisor is PID 1 and the
+  agent is the supervisor's child.
+- **One workspace at a time.** The bench refuses to run beside other workspaces, so nothing
+  else shares the nodes and the running cost it reads is the bench workspace's own.
+
+It writes `notes/bench-<env>-<date>.json`: every cycle, per-repository summaries (average and
+nearest-rank p95), and the averages the cost report runs on.
 
 ### Web UI (`web/`, embedded in the gateway)
 

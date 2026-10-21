@@ -142,6 +142,20 @@ The settings page does the same. Both write the `sbx-policy` ConfigMap, which ca
 edited directly. The chart's defaults are under `policy:` in `charts/sbx/values.yaml`. A
 broken `sbx-policy` is reported as an Event on the ConfigMap and ignored.
 
+### Benchmark
+
+```bash
+make bench     # about 35 minutes; writes notes/bench-kind-<date>.json
+```
+
+It runs three real repositories pinned in `test/bench/repos.json`: vggt (Python, torch),
+graphql-js (TypeScript) and pluggy (a small Python library). Each gets a cold start, then ten
+suspend/wake cycles, half of them woken by a wake-hint. The results show suspend time, wake
+stages, how long the agent waited, snapshot and dependency archive sizes, S3 requests per
+cycle, and the sidecar's and agent's CPU and memory. Use `BENCH_ARGS="--repos pluggy --cycles
+2"` for a quick run. The bench needs the cluster to itself and internet access for the
+repositories and package registries.
+
 ### Metrics and dashboards
 
 On kind, `make deploy` also installs Prometheus and Grafana:
@@ -167,6 +181,7 @@ dashboards.
 | `make lint` | golangci-lint (tools are pinned in `tools.mod`) |
 | `make test-e2e` | End-to-end tests against the deployed cluster (`RUN=<regex>`) |
 | `make demo` | Play an agent session against the deployed cluster |
+| `make bench` | Measure the platform on real repositories |
 | `make ui` | Print a signed-in link to the web UI |
 | `make grafana` | Open Grafana with the sbx dashboards |
 | `make gen` / `make verify-gen` | Regenerate CRDs and gRPC code / check they're current |
