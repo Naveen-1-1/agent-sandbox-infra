@@ -70,6 +70,22 @@ bin/sbxctl list
 `create` prints a token scoped to that one workspace. An agent harness uses it in place of
 the admin token.
 
+### Dependencies and services
+
+A workspace whose repository has a `package-lock.json`, `uv.lock` or `requirements.txt`
+gets its `node_modules` or `.venv` restored from a shared cache on every wake. On a cache
+miss it is installed, and cached when the workspace next sleeps. Only commands that need it
+wait for it:
+
+```bash
+bin/sbxctl create --repo http://sbx-fixtures.sbx-system.svc/hello-deps.git --name app \
+  --image mcr.microsoft.com/devcontainers/javascript-node:22
+bin/sbxctl exec sbx-workspaces/app -- ls          # runs at once
+bin/sbxctl exec sbx-workspaces/app -- npm test    # waits for node_modules if needed
+bin/sbxctl service start sbx-workspaces/app web -- npm run dev   # restarted after every wake
+bin/sbxctl service list sbx-workspaces/app
+```
+
 ### Sleep policy
 
 Workspaces go to sleep on their own. The chart's default policy, `fixed`, suspends after

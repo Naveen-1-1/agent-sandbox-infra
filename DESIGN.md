@@ -166,6 +166,49 @@ environment that `/workspace` is a safe directory. The per-epoch
 token Secret is mounted only into our containers. The workload gets just the hash of its
 agent token, has no service-account token, and our containers drop all capabilities.
 
+### Dependencies (`internal/depcache`, restored by the sidecar)
+
+Dependency directories (`node_modules`, `.venv`) are never in a snapshot. They come back
+from a shared cache instead:
+
+- **Profiles.** npm, pip or uv, detected from the lockfile in the repository. Each
+  profile names its directory, its install command (`npm ci`, `uv sync --frozen`, a venv
+  plus `pip install -r`) and the programs that need it (`npm`, `node`, `python`, `pytest`, ...).
+- **Key.** An archive is keyed by everything that determines the directory: profile,
+  lockfile hash, the workload image's digest (which pins the runtime and package manager)
+  and CPU arch. The key is shared by every workspace, so a new workspace from the same repo
+  starts with its dependencies.
+- **Restore.** Once files are restored and the controller knows the image digest, the
+  sidecar looks the key up through the broker. On a hit it downloads and extracts the
+  archive next to the target, then renames it into place. On a miss it asks the agent to
+  run the install in the workload container. The workspace serves meanwhile, and only
+  commands that need the dependencies wait (see the gateway). `DepsReady` and
+  `status.deps` say where the directory came from.
+- **Upload.** During the next suspend, while the workload is frozen, the sidecar uploads
+  an install it ran itself. It skips the upload if the lockfile has changed since, because
+  then the directory no longer matches either key. Uploads are write-once and checksummed.
+- **Extraction is hardened.** Every write goes through an `os.Root`. Archives are refused
+  if they contain absolute or `..` names, relative links that leave the directory, hard
+  links, devices or duplicate entries. Setuid bits are dropped and total size is bounded.
+
+Known limits:
+
+- The cache is shared across all workspaces, so it fits a single tenant; per-tenant scoping
+  comes after the MVP.
+- npm workspaces symlink packages out of `node_modules`, so they always install instead of
+  using the cache.
+- The restore starts at about the time the pod turns ready, because that is when kubelet
+  reports the image digest.
+
+### Services (agent, controller)
+
+`spec.services` declares long-running processes, such as a dev server. The agent runs each
+one in its own process group, restarts it with backoff when it exits, and keeps the tail
+of its output. Its process tree stops with SIGTERM, then SIGKILL. The controller starts
+the declared services once per epoch. Those that wait for dependencies (the default) start
+when the restore settles, so after every wake the dev server comes back in the new pod.
+Running services don't keep a workspace awake under the `fixed` policy.
+
 ### Agent (`cmd/sbx-agent`, `internal/agent`)
 
 PID 1 of the workload container, which runs the user's devcontainer image. It re-executes
@@ -211,7 +254,7 @@ with the bundle size limit enforced up front.
 ### Gateway (`cmd/sbx-gateway`, `internal/gateway`, API in `internal/sbxapi`)
 
 The front door for agents, browsers and `sbxctl`. It serves a REST API: create, list, status,
-exec, files, wake, wake-hint, turn-ended and suspend. Each call needs either the admin token
+exec, files, services, wake, wake-hint, turn-ended and suspend. Each call needs either the admin token
 or that workspace's own token. It answers from an informer cache of Workspaces. A call that
 needs the pod while the workspace is asleep is *held*:
 
@@ -227,6 +270,10 @@ needs the pod while the workspace is asleep is *held*:
   after, then retries once.
 - A wake-hint starts the wake and returns at once. Hints are rate-limited and dropped under
   load, because the real request will wake the workspace anyway.
+- A command that needs the dependency directory waits for `DepsReady`. Those are commands
+  that run the profile's programs, or that ask with `waitFor: ["deps"]`. `ls`, `cat` and
+  `git` run as soon as the pod serves. A failed restore releases the waiting commands, so
+  they run and report the error.
 
 Status reads, `/healthz`, `/readyz` and `/metrics` never wake anything; the health and
 metrics endpoints are on a separate admin port. Each replica also keeps the traffic signals
@@ -245,7 +292,8 @@ is never given to the pod.
 ### Snapshot store (`internal/snapstore`)
 
 Owns the S3 layout. `ws/<uid>/b/<sha256>.bundle` holds bundles, written once and content
-addressed. `bases/<url-hash>/<sha>.bundle` holds cached upstream bases. Each workspace has
+addressed. `bases/<url-hash>/<sha>.bundle` holds cached upstream bases, and
+`deps/<profile>/<key>.tar.zst` holds shared dependency archives. Each workspace has
 one `ws/<uid>/manifest.json` naming its latest committed snapshot. A commit states the
 sequence number it builds on. It first verifies the bundle is in S3 with the reported size
 and checksum, then replaces the manifest with a compare-and-swap. Retrying an attempt that
