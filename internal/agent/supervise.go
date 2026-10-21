@@ -18,7 +18,8 @@ func ShouldSupervise() bool {
 
 // Supervise re-executes the current binary as a child, forwards termination
 // signals to it, reaps every child process (including orphans reparented to
-// PID 1), and returns the child's exit code.
+// PID 1), and returns the child's exit code. The child, and so every
+// command, service and the editor, gets a writable HOME.
 func Supervise() int {
 	exe, err := os.Executable()
 	if err != nil {
@@ -29,7 +30,7 @@ func Supervise() int {
 
 	//nolint:gosec // re-executes this same binary with its own arguments
 	child, err := os.StartProcess(exe, os.Args, &os.ProcAttr{
-		Env:   append(os.Environ(), childEnv),
+		Env:   append(withUsableHome(os.Environ(), fallbackHome), childEnv),
 		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
 	})
 	if err != nil {
