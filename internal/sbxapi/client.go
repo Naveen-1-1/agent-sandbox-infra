@@ -128,6 +128,24 @@ func (c *Client) Suspend(ctx context.Context, ns, name string) error {
 	return c.do(ctx, http.MethodPost, path(ns, name, "suspend"), nil, nil)
 }
 
+// Policy returns the cluster's sleep policy and the ones to choose from.
+func (c *Client) Policy(ctx context.Context) (*PolicySettings, error) {
+	out := &PolicySettings{}
+	return out, c.do(ctx, http.MethodGet, "/api/v1/policy", nil, out)
+}
+
+// SetPolicy makes p the cluster's sleep policy, at once.
+func (c *Client) SetPolicy(ctx context.Context, p PolicyRef) (*PolicySettings, error) {
+	out := &PolicySettings{}
+	return out, c.do(ctx, http.MethodPut, "/api/v1/policy", p, out)
+}
+
+// ResetPolicy goes back to the chart's default policy.
+func (c *Client) ResetPolicy(ctx context.Context) (*PolicySettings, error) {
+	out := &PolicySettings{}
+	return out, c.do(ctx, http.MethodDelete, "/api/v1/policy", nil, out)
+}
+
 // EditorURL returns a sign-in link to the editor (port 0) or an app port.
 func (c *Client) EditorURL(ctx context.Context, ns, name string, port int) (string, error) {
 	out := &EditorResponse{}

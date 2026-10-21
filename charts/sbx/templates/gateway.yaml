@@ -49,6 +49,36 @@ subjects:
     name: {{ $name }}
     namespace: {{ .Release.Namespace }}
 ---
+# The settings page reads and writes the sleep policy, in the release
+# namespace only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-policy
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [sbx-policy, sbx-policy-defaults]
+    verbs: [get, update, delete]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [create] # create can't be limited by name
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-policy
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-policy
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -91,6 +121,8 @@ spec:
             - {name: SBX_PUBLIC_SCHEME, value: {{ .Values.gateway.publicScheme | quote }}}
             - {name: SBX_PUBLIC_PORT, value: {{ .Values.gateway.publicPort | quote }}}
             - {name: SBX_SESSION_TTL, value: {{ .Values.gateway.sessionTTL | quote }}}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
           ports:
             - {name: http, containerPort: 8080}
             - {name: admin, containerPort: 8081}

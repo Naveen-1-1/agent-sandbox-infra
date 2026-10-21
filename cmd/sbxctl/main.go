@@ -11,6 +11,7 @@
 //	sbxctl wake | wake-hint | turn-ended | suspend | delete | token NS/NAME
 //	sbxctl wait NS/NAME PHASE [--timeout 3m]
 //	sbxctl demo [--image IMG] [--thinking 10s] [--after-turn 5s] [--keep]   (admin token)
+//	sbxctl policy get | set NAME [--param k=v ...] | reset                    (admin token)
 //
 // The gateway URL and token come from --gateway/--token or SBX_GATEWAY and
 // SBX_TOKEN (the admin token, or a workspace's own token).
@@ -68,15 +69,7 @@ func run(args []string) error {
 		fs.StringVar(&r.Namespace, "namespace", "", "namespace (default: the gateway's)")
 		fs.StringVar(&r.Mode, "mode", "", "Auto, AlwaysOn or Off")
 		pol := fs.String("policy", "", "sleep policy for this workspace (default: the cluster's)")
-		params := map[string]string{}
-		fs.Func("param", "sleep policy parameter as key=value (repeatable)", func(v string) error {
-			k, val, ok := strings.Cut(v, "=")
-			if !ok {
-				return errors.New("want key=value")
-			}
-			params[k] = val
-			return nil
-		})
+		params := paramFlag(fs)
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
@@ -172,6 +165,9 @@ func run(args []string) error {
 
 	case "service":
 		return service(ctx, c, rest, *asJSON)
+
+	case "policy":
+		return clusterPolicy(ctx, c, rest, *asJSON)
 
 	case "editor":
 		fs := flag.NewFlagSet("editor", flag.ContinueOnError)
@@ -344,6 +340,76 @@ func service(ctx context.Context, c *sbxapi.Client, args []string, asJSON bool) 
 }
 
 // sleepSummary is the sleep verdict in a few words, e.g. "Active (4m10s)".
+// clusterPolicy runs the policy subcommands: the sleep policy for every
+// workspace that doesn't name its own.
+func clusterPolicy(ctx context.Context, c *sbxapi.Client, args []string, asJSON bool) error {
+	usage := errors.New("usage: sbxctl policy get | set NAME [--param k=v ...] | reset")
+	if len(args) == 0 {
+		return usage
+	}
+	var (
+		p   *sbxapi.PolicySettings
+		err error
+	)
+	switch args[0] {
+	case "get":
+		p, err = c.Policy(ctx)
+	case "set":
+		if len(args) < 2 {
+			return usage
+		}
+		fs := flag.NewFlagSet("policy set", flag.ContinueOnError)
+		params := paramFlag(fs)
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		p, err = c.SetPolicy(ctx, sbxapi.PolicyRef{Name: args[1], Params: params})
+	case "reset":
+		p, err = c.ResetPolicy(ctx)
+	default:
+		return usage
+	}
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		return printJSON(p)
+	}
+	fmt.Printf("%s (from %s)\n", p.Name, p.Source)
+	for _, spec := range p.Specs {
+		if spec.Name != p.Name {
+			continue
+		}
+		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		for _, param := range spec.Params {
+			v, set := p.Params[param.Name]
+			if !set {
+				v = param.Default + " (default)"
+			}
+			fmt.Fprintf(w, "  %s\t%s\t%s\n", param.Name, v, param.Help)
+		}
+		_ = w.Flush()
+	}
+	if p.Invalid != "" {
+		fmt.Printf("skipped: %s\n", p.Invalid)
+	}
+	return nil
+}
+
+// paramFlag adds a repeatable --param key=value flag.
+func paramFlag(fs *flag.FlagSet) map[string]string {
+	params := map[string]string{}
+	fs.Func("param", "sleep policy parameter as key=value (repeatable)", func(v string) error {
+		k, val, ok := strings.Cut(v, "=")
+		if !ok {
+			return errors.New("want key=value")
+		}
+		params[k] = val
+		return nil
+	})
+	return params
+}
+
 func sleepSummary(s *sbxapi.Sleep) string {
 	if s == nil {
 		return "-"

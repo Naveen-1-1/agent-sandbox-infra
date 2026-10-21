@@ -121,6 +121,9 @@ func start(t *testing.T, cfg gateway.Config, delay time.Duration) *env {
 		t.Fatal(err)
 	}
 	cfg.WorkspaceNamespace = ns
+	if cfg.PolicyNamespace == "" {
+		cfg.PolicyNamespace = ns
+	}
 	reg := prometheus.NewRegistry()
 	srv := gateway.New(cfg, k8s, k8s, k8s, reg, nil)
 	srv.SetSynced()

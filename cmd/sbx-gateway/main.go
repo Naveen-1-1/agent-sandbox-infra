@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	toolscache "k8s.io/client-go/tools/cache"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -55,6 +56,8 @@ func main() {
 	flag.StringVar(&cfg.PublicScheme, "public-scheme", envOr("SBX_PUBLIC_SCHEME", "http"), "scheme browsers use to reach the gateway")
 	flag.IntVar(&cfg.PublicPort, "public-port", envInt("SBX_PUBLIC_PORT", 0), "port browsers use to reach the gateway (0: the scheme's default)")
 	flag.DurationVar(&cfg.SessionTTL, "session-ttl", envDuration("SBX_SESSION_TTL", 12*time.Hour), "how long a browser stays signed in to a workspace")
+	flag.StringVar(&cfg.PolicyNamespace, "policy-namespace", envOr("SBX_POLICY_NAMESPACE", os.Getenv("POD_NAMESPACE")), "namespace of the sleep policy ConfigMaps (the controller's)")
+	flag.IntVar(&cfg.MaxEventStreams, "max-event-streams", envInt("SBX_MAX_EVENT_STREAMS", 64), "concurrent workspace event streams")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("component", "sbx-gateway")
@@ -80,9 +83,14 @@ func run(ctx context.Context, cfg gateway.Config, addr, adminAddr, signalsAddr, 
 	}
 	cfg.AdminToken = strings.TrimSpace(string(admin))
 
+	if cfg.PolicyNamespace == "" {
+		return errors.New("POD_NAMESPACE or --policy-namespace is required")
+	}
 	scheme := runtime.NewScheme()
-	if err := sbxv1.AddToScheme(scheme); err != nil {
-		return err
+	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sbxv1.AddToScheme} {
+		if err := add(scheme); err != nil {
+			return err
+		}
 	}
 	rest := ctrl.GetConfigOrDie()
 	kube, err := client.New(rest, client.Options{Scheme: scheme})

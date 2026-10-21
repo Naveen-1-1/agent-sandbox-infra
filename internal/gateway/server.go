@@ -69,6 +69,10 @@ type Config struct {
 	PublicPort   int    // 0: the scheme's default
 	// SessionTTL is how long a browser stays signed in to a workspace host.
 	SessionTTL time.Duration
+	// PolicyNamespace holds the sleep policy ConfigMaps (the controller's).
+	PolicyNamespace string
+	// MaxEventStreams bounds concurrent /api/v1/events streams.
+	MaxEventStreams int
 	// AgentToken returns the token for a workspace's current pod. Default:
 	// derived for the workspace's epoch.
 	AgentToken func(ws *sbxv1.Workspace) string
@@ -108,6 +112,9 @@ func (c *Config) defaults() {
 	if c.SessionTTL <= 0 {
 		c.SessionTTL = 12 * time.Hour
 	}
+	if c.MaxEventStreams <= 0 {
+		c.MaxEventStreams = 64
+	}
 	if c.AgentToken == nil {
 		keys := c.Keys
 		c.AgentToken = func(ws *sbxv1.Workspace) string { return keys.Derive(token.Agent, string(ws.UID), ws.Status.Epoch) }
@@ -127,6 +134,7 @@ type Server struct {
 	podHTTP *http.Client
 	// webTransport carries editor and app traffic, WebSockets included.
 	webTransport *http.Transport
+	feed         *feed // workspace changes for event streams
 	log          *slog.Logger
 	synced       atomic.Bool
 
@@ -149,6 +157,7 @@ func New(cfg Config, cache client.Reader, c client.Client, api client.Reader, re
 		hints:        rate.NewLimiter(rate.Limit(cfg.HintsPerSecond), cfg.HintBurst),
 		podHTTP:      &http.Client{Timeout: cfg.ExecTimeout},
 		webTransport: &http.Transport{MaxIdleConnsPerHost: 16, IdleConnTimeout: time.Minute},
+		feed:         &feed{max: cfg.MaxEventStreams, subs: map[*subscriber]struct{}{}},
 		log:          log,
 		hintAt:       map[string]time.Time{},
 	}
@@ -167,7 +176,10 @@ func (s *Server) Close() {
 func (s *Server) Signals() *Signals { return s.signals }
 
 // Notify tells waiters on a workspace that it changed (informer events).
-func (s *Server) Notify(key string) { s.holder.Notify(key) }
+func (s *Server) Notify(key string) {
+	s.holder.Notify(key)
+	s.feed.publish(key)
+}
 
 // Forget drops state for a deleted workspace.
 func (s *Server) Forget(key string) {
@@ -176,6 +188,7 @@ func (s *Server) Forget(key string) {
 	delete(s.hintAt, key)
 	s.mu.Unlock()
 	s.holder.Notify(key)
+	s.feed.publish(key)
 }
 
 // SetSynced marks the workspace cache as ready.
@@ -202,6 +215,10 @@ type handler func(w http.ResponseWriter, r *http.Request, ws *sbxv1.Workspace)
 func (s *Server) APIHandler() http.Handler {
 	mux := http.NewServeMux()
 	const ws = "/api/v1/workspaces/{ns}/{name}"
+	mux.HandleFunc("GET /api/v1/policy", s.admin(s.getPolicy))
+	mux.HandleFunc("PUT /api/v1/policy", s.admin(s.putPolicy))
+	mux.HandleFunc("DELETE /api/v1/policy", s.admin(s.resetPolicy))
+	mux.HandleFunc("GET /api/v1/events", s.admin(s.events))
 	mux.HandleFunc("POST /api/v1/workspaces", s.admin(s.create))
 	mux.HandleFunc("GET /api/v1/workspaces", s.admin(s.list))
 	mux.HandleFunc("GET "+ws, s.member(s.get))

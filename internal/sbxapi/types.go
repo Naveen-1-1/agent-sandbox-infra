@@ -3,6 +3,8 @@
 //
 // Routes (all under /api/v1):
 //
+//	GET|PUT|DELETE /policy                          the cluster's sleep policy (admin)
+//	GET    /events                                  workspace changes as server-sent events (admin)
 //	POST   /workspaces                              create (admin)
 //	GET    /workspaces                              list (admin)
 //	GET    /workspaces/{ns}/{name}                  status; never wakes
@@ -85,6 +87,33 @@ type Service struct {
 	Restarts     int32  `json:"restarts,omitempty"`
 	LastExitCode int32  `json:"lastExitCode,omitempty"`
 	Output       string `json:"output,omitempty"` // the end of its output
+}
+
+// PolicySettings is the cluster's sleep policy and the ones to choose from.
+type PolicySettings struct {
+	Name   string            `json:"name"`
+	Params map[string]string `json:"params,omitempty"`
+	// Source is the ConfigMap it comes from: sbx-policy (set here),
+	// sbx-policy-defaults (the chart's), or built-in.
+	Source string `json:"source"`
+	// Invalid says why a config was skipped; the controller keeps the last
+	// good policy meanwhile.
+	Invalid string       `json:"invalid,omitempty"`
+	Specs   []PolicySpec `json:"specs"`
+}
+
+// PolicySpec describes a policy one can choose.
+type PolicySpec struct {
+	Name   string        `json:"name"`
+	Help   string        `json:"help"`
+	Params []PolicyParam `json:"params,omitempty"`
+}
+
+// PolicyParam is one policy parameter.
+type PolicyParam struct {
+	Name    string `json:"name"`
+	Default string `json:"default"`
+	Help    string `json:"help"`
 }
 
 // PolicyRef names a sleep policy and its parameters.
