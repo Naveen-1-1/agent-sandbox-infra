@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,17 +25,20 @@ import (
 	sbcontrollers "sigs.k8s.io/agent-sandbox/controllers"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	sidecarv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1"
+	signalsv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/signals/v1"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/ops"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/podspec"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/sleep"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/workspace"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/objstore"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/policy"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapstore"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/testutil/envtestx"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/testutil/fakekubelet"
@@ -51,7 +57,13 @@ var (
 	scheme  *runtime.Scheme
 	wsm     *metrics.Workspace
 	kubelet *fakekubelet.Kubelet
+
+	gateways = &fakeGateways{}
+	sleepm   *metrics.Sleep
 )
+
+// policyNS holds the cluster policy ConfigMaps.
+const policyNS = "sbx-system"
 
 const baseSHA = "1111111111111111111111111111111111111111"
 
@@ -101,11 +113,18 @@ func TestMain(m *testing.M) {
 	}
 	kubelet.Gate = brokerAccepts
 	wsm = metrics.NewWorkspace(prometheus.NewRegistry(), nil)
+	if err := k8s.Create(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: policyNS}}); err != nil {
+		fail(err)
+	}
 	r := newReconciler(mgr.GetClient(), mgr.GetAPIReader(), store)
+	r.Policies = &sleep.Policies{Client: mgr.GetClient(), Namespace: policyNS, Recorder: mgr.GetEventRecorder("sbx-controller")}
+	r.Gateways = gateways
+	r.Ops = &ops.Limiter{Max: 64, MinSuspend: 8}
+	sleepm = metrics.NewSleep(prometheus.NewRegistry(), nil, nil)
+	r.Sleep = sleepm
+	r.Config.MaxConcurrent = 8
 	notCrash := predicate.NewPredicateFuncs(func(o client.Object) bool { return !strings.HasPrefix(o.GetNamespace(), "crash-") })
-	err = ctrl.NewControllerManagedBy(mgr).Named("workspace").For(&sbxv1.Workspace{}).Owns(&sbv1.Sandbox{}).
-		WithEventFilter(notCrash).WithOptions(controller.Options{MaxConcurrentReconciles: 8}).Complete(r)
-	if err != nil {
+	if err := r.SetupWithManager(mgr, notCrash); err != nil {
 		fail(err)
 	}
 
@@ -154,17 +173,18 @@ type fakePods struct {
 	snaps    map[string]*sidecarv1.Snapshot
 	blocked  map[string]bool // workspace UID -> snapshots stay RUNNING
 	failures map[string]sidecarv1.SnapshotErrorCode
+	signals  map[string]*signalsv1.Signals // workspace UID -> what its agent reports
 	thaws    int
 	hook     func(what string) error // called before each side effect; an error fails it
 }
 
 func newFakePods(s *objstore.Mem) *fakePods {
 	return &fakePods{store: s, frozen: map[string]string{}, held: map[string]bool{}, snaps: map[string]*sidecarv1.Snapshot{},
-		blocked: map[string]bool{}, failures: map[string]sidecarv1.SnapshotErrorCode{}}
+		blocked: map[string]bool{}, failures: map[string]sidecarv1.SnapshotErrorCode{}, signals: map[string]*signalsv1.Signals{}}
 }
 
 func (f *fakePods) Agent(ws *sbxv1.Workspace, p workspace.Pod) workspace.Agent {
-	return fakeAgent{f: f, ip: p.IP}
+	return fakeAgent{f: f, ip: p.IP, uid: string(ws.UID)}
 }
 func (f *fakePods) Sidecar(ws *sbxv1.Workspace, p workspace.Pod) workspace.Sidecar {
 	return fakeSidecar{f: f, ws: ws, ip: p.IP}
@@ -188,8 +208,51 @@ func (f *fakePods) isFrozen(ip string) (bool, bool) {
 }
 
 type fakeAgent struct {
-	f  *fakePods
-	ip string
+	f       *fakePods
+	ip, uid string
+}
+
+// Signals reports what a test set for the workspace; by default the agent
+// was just used, so no policy suspends it.
+func (a fakeAgent) Signals(context.Context) (*signalsv1.Signals, error) {
+	a.f.mu.Lock()
+	defer a.f.mu.Unlock()
+	if s, ok := a.f.signals[a.uid]; ok {
+		if s == nil {
+			return nil, errors.New("agent unreachable")
+		}
+		return proto.Clone(s).(*signalsv1.Signals), nil
+	}
+	return &signalsv1.Signals{LastActivity: timestamppb.Now()}, nil
+}
+
+// setSignals makes ws's agent report s; nil makes it unreachable.
+func (f *fakePods) setSignals(ws *sbxv1.Workspace, s *signalsv1.Signals) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.signals[string(ws.UID)] = s
+}
+
+// fakeGateways is the gateway replicas' view, set by tests.
+type fakeGateways struct {
+	mu      sync.Mutex
+	signals map[string]policy.Signals
+	down    bool
+}
+
+func (g *fakeGateways) Signals(key string) (policy.Signals, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.signals[key], !g.down
+}
+
+func (g *fakeGateways) set(ws *sbxv1.Workspace, s policy.Signals) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.signals == nil {
+		g.signals = map[string]policy.Signals{}
+	}
+	g.signals[client.ObjectKeyFromObject(ws).String()] = s
 }
 
 func (a fakeAgent) Freeze(_ context.Context, attempt string, lease time.Time) error {
@@ -388,4 +451,4 @@ func sandbox(t *testing.T, ws *sbxv1.Workspace) *sbv1.Sandbox {
 	return sb
 }
 
-func sleep() { time.Sleep(20 * time.Millisecond) }
+func pause() { time.Sleep(20 * time.Millisecond) }

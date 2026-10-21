@@ -181,7 +181,7 @@ func waitGone(t *testing.T, ws *sbxv1.Workspace) {
 		if client.IgnoreNotFound(err) == nil && err != nil {
 			return
 		}
-		sleep()
+		pause()
 	}
 	t.Fatal("workspace was not deleted")
 }
@@ -205,7 +205,7 @@ func TestPausedWorkspaceIsLeftAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 25 {
-		sleep()
+		pause()
 	}
 	if cur := get(t, ws); cur.Status.Phase != "" || len(cur.Finalizers) != 0 {
 		t.Fatalf("paused workspace was reconciled: phase %q finalizers %v", cur.Status.Phase, cur.Finalizers)

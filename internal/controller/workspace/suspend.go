@@ -19,12 +19,14 @@ import (
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	sidecarv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/ops"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapstore"
 )
 
 // running watches a serving workspace: it notices a lost disk or pod
-// changes, and starts a suspend when one is asked for.
+// changes, and starts a suspend when one is asked for or the sleep policy
+// decides it is time.
 func (r *Reconciler) running(ctx context.Context, ws *sbxv1.Workspace) (reconcile.Result, error) {
 	if ws.Spec.Wake.Seq > ws.Status.ObservedWakeSeq { // already awake
 		ws.Status.ObservedWakeSeq = ws.Spec.Wake.Seq
@@ -61,35 +63,34 @@ func (r *Reconciler) running(ctx context.Context, ws *sbxv1.Workspace) (reconcil
 		return reconcile.Result{RequeueAfter: 2 * time.Second}, client.IgnoreNotFound(err)
 	}
 
-	if wait, ok := r.suspendWanted(ws); ok {
-		if wait > 0 {
-			return reconcile.Result{RequeueAfter: wait}, nil
+	v, suspend, recheck := r.sleepVerdict(ctx, ws)
+	if !suspend {
+		r.forget(ws) // it may have been queued for a suspend it no longer wants
+		if sleepChanged(ws.Status.Sleep, v) {
+			ws.Status.Sleep = v
+			return r.save(ctx, ws, r.countVerdict(v, false))
 		}
-		now := metav1.Time{Time: r.Now()}
-		ws.Status.Suspend = &sbxv1.SuspendStatus{
-			AttemptID: newAttemptID(ws.Status.Epoch), PodUID: ws.Status.Pod.UID,
-			StartedWakeSeq: ws.Spec.Wake.Seq, StartedAt: now, Step: sbxv1.SuspendStarted,
-		}
-		setCondition(ws, sbxv1.ConditionReady, metav1.ConditionFalse, "Suspending", "saving the workspace to S3")
-		return r.save(ctx, ws, r.setPhase(ws, sbxv1.PhaseSuspending))
-	}
-	return reconcile.Result{}, nil
-}
-
-// suspendWanted reports whether a suspend was asked for, and how long to
-// wait first if a recent failure is backing it off.
-func (r *Reconciler) suspendWanted(ws *sbxv1.Workspace) (time.Duration, bool) {
-	if ws.Spec.Mode == sbxv1.ModeAlwaysOn {
-		return 0, false
-	}
-	_, requested := ws.Annotations[sbxv1.AnnotationSuspendRequested]
-	if !requested && ws.Spec.Mode != sbxv1.ModeOff {
-		return 0, false
+		return reconcile.Result{RequeueAfter: recheck}, nil
 	}
 	if t := ws.Status.SuspendRetryAt; t != nil && r.Now().Before(t.Time) {
-		return t.Sub(r.Now()), true
+		return reconcile.Result{RequeueAfter: t.Sub(r.Now())}, nil // backing off a failed snapshot
 	}
-	return 0, true
+	if !r.acquire(ws, ops.Suspend) {
+		return r.requeue()
+	}
+	now := metav1.Time{Time: r.Now()}
+	ws.Status.Suspend = &sbxv1.SuspendStatus{
+		AttemptID: newAttemptID(ws.Status.Epoch), PodUID: ws.Status.Pod.UID,
+		StartedWakeSeq: ws.Spec.Wake.Seq, StartedAt: now, Step: sbxv1.SuspendStarted,
+	}
+	counted := func() {}
+	if sleepChanged(ws.Status.Sleep, v) {
+		counted = r.countVerdict(v, true)
+	}
+	ws.Status.Sleep = v // kept while suspended: why it went to sleep
+	setCondition(ws, sbxv1.ConditionReady, metav1.ConditionFalse, "Suspending", "saving the workspace to S3")
+	logger(ctx, ws).Info("suspending", "policy", v.Policy, "reason", v.Reason, "message", v.Message)
+	return r.save(ctx, ws, r.setPhase(ws, sbxv1.PhaseSuspending), counted)
 }
 
 // abortReason says why an uncommitted suspend must give way, or "".
@@ -305,6 +306,9 @@ func (r *Reconciler) suspended(ctx context.Context, ws *sbxv1.Workspace) (reconc
 	if trigger == "" {
 		trigger = sbxv1.WakeTriggerAPI
 	}
+	if !r.acquire(ws, r.wakeClass(ws, trigger)) {
+		return r.requeue()
+	}
 	r.startWake(ws, trigger)
 	return r.save(ctx, ws, r.setPhase(ws, sbxv1.PhaseWaking), func() {
 		if r.Metrics != nil {
@@ -333,6 +337,7 @@ func (r *Reconciler) startWake(ws *sbxv1.Workspace, trigger sbxv1.WakeTrigger) {
 	ws.Status.Wake = &sbxv1.WakeStatus{TargetEpoch: target, RestoreSeq: restore, Trigger: trigger, StartedAt: now}
 	ws.Status.Volume = &sbxv1.VolumeStatus{ClaimName: claimName(ws, target)}
 	ws.Status.Timeline = &sbxv1.WakeTimeline{Trigger: trigger, RequestedAt: &requested}
+	ws.Status.Sleep = nil
 	setCondition(ws, sbxv1.ConditionReady, metav1.ConditionFalse, "Waking", fmt.Sprintf("restoring into epoch %d", target))
 }
 

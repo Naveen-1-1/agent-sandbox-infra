@@ -340,6 +340,31 @@ spec:
               resolvedImage:
                 description: ResolvedImage is the workload image in use.
                 type: string
+              sleep:
+                description: |-
+                  Sleep is the sleep policy's latest verdict: why the workspace is still
+                  up and when it will suspend, or why it suspended.
+                properties:
+                  message:
+                    type: string
+                  policy:
+                    description: |-
+                      Policy is the policy that decided, for example "fixed". Empty for an
+                      explicit suspend.
+                    type: string
+                  reason:
+                    description: |-
+                      Reason is short and stable, for example "Active", "CommandRunning",
+                      "Idle" or "TurnEnded".
+                    type: string
+                  suspendAt:
+                    description: SuspendAt is when the workspace will suspend if nothing
+                      happens first.
+                    format: date-time
+                    type: string
+                required:
+                - reason
+                type: object
               suspend:
                 description: Suspend tracks an in-progress suspend attempt.
                 properties:

@@ -23,16 +23,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	sbv1 "sigs.k8s.io/agent-sandbox/api/v1beta1"
-	ctrl "sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/ops"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/podspec"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/sleep"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/objstore"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapstore"
@@ -110,21 +116,69 @@ type Reconciler struct {
 	Snapshots *metrics.Snapshot
 	Config    Config
 	Now       func() time.Time
+
+	// Policies picks each workspace's sleep policy. Without it, workspaces
+	// suspend only when asked to.
+	Policies *sleep.Policies
+	// Gateways is the gateway replicas' traffic view; nil ignores it.
+	Gateways GatewaySignals
+	// Ops bounds concurrent wakes and suspends; nil means no bound.
+	Ops   *ops.Limiter
+	Sleep *metrics.Sleep
+	// Wakeups, if set, carries workspaces to decide about right away (their
+	// gateway signals changed).
+	Wakeups <-chan event.GenericEvent
 }
 
 // SetupWithManager registers the controller. Sandboxes it owns trigger
-// reconciles when their readiness or suspension changes.
-func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
+// reconciles when their readiness or suspension changes, and a change to
+// the policy ConfigMaps re-decides every running workspace. filters, if
+// given, limit which objects trigger reconciles.
+func (r *Reconciler) SetupWithManager(mgr manager.Manager, filters ...predicate.Predicate) error {
 	r.Config.defaults()
 	if r.Now == nil {
 		r.Now = time.Now
 	}
-	return ctrl.ControllerManagedBy(mgr).
+	b := builder.ControllerManagedBy(mgr).
 		Named("workspace").
 		For(&sbxv1.Workspace{}).
 		Owns(&sbv1.Sandbox{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: r.Config.MaxConcurrent}).
-		Complete(r)
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.Config.MaxConcurrent})
+	for _, f := range filters {
+		b = b.WithEventFilter(f)
+	}
+	if r.Policies != nil {
+		// A policy change re-decides every running workspace at once.
+		b = b.Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.runningWorkspaces),
+			builder.WithPredicates(predicate.NewPredicateFuncs(r.isPolicyConfig)))
+	}
+	if r.Wakeups != nil {
+		b = b.WatchesRawSource(source.Channel(r.Wakeups, &handler.EnqueueRequestForObject{}))
+	}
+	return b.Complete(r)
+}
+
+func (r *Reconciler) isPolicyConfig(o client.Object) bool {
+	return o.GetNamespace() == r.Policies.Namespace &&
+		(o.GetName() == sleep.PolicyConfigMap || o.GetName() == sleep.DefaultsConfigMap)
+}
+
+func (r *Reconciler) runningWorkspaces(ctx context.Context, _ client.Object) []reconcile.Request {
+	// Load the new config now, so a bad one is reported even if no
+	// workspace is running to need it.
+	_, _ = r.Policies.Cluster(ctx)
+	list := &sbxv1.WorkspaceList{}
+	if err := r.Client.List(ctx, list); err != nil {
+		log.FromContext(ctx).Error(err, "listing workspaces after a policy change")
+		return nil
+	}
+	var out []reconcile.Request
+	for _, ws := range list.Items {
+		if ws.Status.Phase == sbxv1.PhaseRunning {
+			out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&ws)})
+		}
+	}
+	return out
 }
 
 // Reconcile moves one workspace one step through its lifecycle.
@@ -141,11 +195,25 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, nil
 	}
 	if !ws.DeletionTimestamp.IsZero() {
+		r.forget(ws)
 		return r.finalize(ctx, ws)
 	}
 	if !controllerutil.ContainsFinalizer(ws, FinalizerWorkspace) {
 		controllerutil.AddFinalizer(ws, FinalizerWorkspace)
 		return reconcile.Result{}, ignoreConflict(r.Client.Update(ctx, ws))
+	}
+
+	// Operations in progress keep their slot; this also re-counts them
+	// after a controller restart.
+	switch ws.Status.Phase {
+	case sbxv1.PhaseProvisioning, sbxv1.PhaseWaking:
+		if ws.Status.Wake != nil {
+			r.hold(ws, r.wakeClass(ws, ws.Status.Wake.Trigger))
+		}
+	case sbxv1.PhaseSuspending, sbxv1.PhaseTearingDown:
+		r.hold(ws, ops.Suspend)
+	default:
+		r.release(ws) // settled; a queued request for a new operation stays queued
 	}
 
 	switch ws.Status.Phase {

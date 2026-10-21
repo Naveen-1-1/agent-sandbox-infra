@@ -6,6 +6,8 @@ import (
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	sidecarv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1"
+	signalsv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/signals/v1"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/policy"
 )
 
 // Agent is the part of a pod's sbx-agent the controller drives.
@@ -14,6 +16,16 @@ type Agent interface {
 	// the pod is deleted.
 	Freeze(ctx context.Context, attemptID string, leaseUntil time.Time) error
 	Thaw(ctx context.Context, attemptID string) error
+	// Signals reports in-pod activity for the sleep policy.
+	Signals(ctx context.Context) (*signalsv1.Signals, error)
+}
+
+// GatewaySignals is what the gateway replicas know about a workspace's
+// traffic: turns, held requests and open streams.
+type GatewaySignals interface {
+	// Signals returns the merged view for "namespace/name"; ok is false when
+	// some replica's view is missing or stale.
+	Signals(key string) (s policy.Signals, ok bool)
 }
 
 // Sidecar is the part of a pod's sbx-sidecar the controller drives.

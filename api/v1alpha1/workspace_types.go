@@ -131,6 +131,25 @@ const (
 	WakeTriggerAPI WakeTrigger = "API"
 )
 
+// SleepStatus is a sleep policy verdict.
+type SleepStatus struct {
+	// Policy is the policy that decided, for example "fixed". Empty for an
+	// explicit suspend.
+	// +optional
+	Policy string `json:"policy,omitempty"`
+
+	// Reason is short and stable, for example "Active", "CommandRunning",
+	// "Idle" or "TurnEnded".
+	Reason string `json:"reason"`
+
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// SuspendAt is when the workspace will suspend if nothing happens first.
+	// +optional
+	SuspendAt *metav1.Time `json:"suspendAt,omitempty"`
+}
+
 // PolicyRef selects a sleep policy and its parameters.
 type PolicyRef struct {
 	// Name is a registered policy, for example "fixed" or "never".
@@ -247,6 +266,11 @@ type WorkspaceStatus struct {
 	// so a restarted controller doesn't think every workspace is idle.
 	// +optional
 	LastActivityAt *metav1.Time `json:"lastActivityAt,omitempty"`
+
+	// Sleep is the sleep policy's latest verdict: why the workspace is still
+	// up and when it will suspend, or why it suspended.
+	// +optional
+	Sleep *SleepStatus `json:"sleep,omitempty"`
 
 	// +listType=map
 	// +listMapKey=type

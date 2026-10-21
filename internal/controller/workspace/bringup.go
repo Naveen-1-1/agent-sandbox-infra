@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
+	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/ops"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/podspec"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/metrics"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/snapshot"
@@ -41,6 +42,9 @@ func (r *Reconciler) startProvisioning(ctx context.Context, ws *sbxv1.Workspace)
 		return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
+	if !r.acquire(ws, ops.WakeRequest) {
+		return r.requeue()
+	}
 	now := metav1.Time{Time: r.Now()}
 	image := ws.Spec.Image
 	if image == "" {

@@ -13,6 +13,7 @@ import (
 	sbxv1 "github.com/Naveen-1-1/agent-sandbox-infra/api/v1alpha1"
 	agentv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/agent/v1"
 	sidecarv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/sidecar/v1"
+	signalsv1 "github.com/Naveen-1-1/agent-sandbox-infra/gen/go/sbx/signals/v1"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/controller/podspec"
 	"github.com/Naveen-1-1/agent-sandbox-infra/internal/token"
 )
@@ -67,6 +68,16 @@ func (a grpcAgent) Thaw(ctx context.Context, attempt string) error {
 	defer conn.Close()
 	_, err = agentv1.NewAgentServiceClient(conn).Thaw(ctx, &agentv1.ThawRequest{AttemptId: attempt})
 	return err
+}
+
+func (a grpcAgent) Signals(ctx context.Context) (*signalsv1.Signals, error) {
+	conn, err := dial(a.ip, podspec.AgentGRPCPort, a.tok)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	resp, err := agentv1.NewAgentServiceClient(conn).GetSignals(ctx, &agentv1.GetSignalsRequest{})
+	return resp.GetSignals(), err
 }
 
 type grpcSidecar struct{ ip, tok string }
