@@ -26,3 +26,11 @@ internal/gateway/webui/dist/
 # Helm dependency archives (rebuilt from Chart.lock)
 charts/*/charts/*.tgz
 charts/*/charts/.deps
+
+# Terraform: providers, state and plans stay local
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfplan
+infra/terraform/*.tfplan.json
+infra/terraform/*.auto.tfvars
