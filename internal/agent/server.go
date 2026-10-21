@@ -41,6 +41,7 @@ type Server struct {
 	cfg      Config
 	activity *Activity
 	freezer  *Freezer
+	services *Services
 	upstream *sandboxd.Server
 	grpc     *grpc.Server
 	http     *http.Server
@@ -65,6 +66,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{cfg: cfg, activity: NewActivity(nil), upstream: up}
 	s.freezer = NewFreezer(cfg.Procs, s.activity, 1, os.Getpid())
+	s.services = NewServices(cfg.Root, s.activity, cfg.Log)
 
 	// Upstream's auth interceptors run first, then our gate.
 	opts := append(up.GRPCServerOptions(),
@@ -128,6 +130,7 @@ func (s *Server) ServeListeners(ctx context.Context, grpcL, restL net.Listener) 
 	defer cancel()
 	// A frozen workload can't act on SIGTERM; resume it so it can exit.
 	_ = s.freezer.Thaw(s.freezer.currentAttempt())
+	s.services.Close()
 	s.upstream.ShutdownProcesses(shutdown)
 	_ = s.http.Shutdown(shutdown)
 	stopped := make(chan struct{})
@@ -188,4 +191,29 @@ func (v *service) Thaw(_ context.Context, r *agentv1.ThawRequest) (*agentv1.Thaw
 
 func (v *service) GetSignals(context.Context, *agentv1.GetSignalsRequest) (*agentv1.GetSignalsResponse, error) {
 	return &agentv1.GetSignalsResponse{Signals: v.s.activity.Signals(), Frozen: v.s.freezer.Frozen()}, nil
+}
+
+// StartService runs a declared service, or reports it if it already runs.
+func (v *service) StartService(ctx context.Context, r *agentv1.StartServiceRequest) (*agentv1.StartServiceResponse, error) {
+	if v.s.freezer.Frozen() {
+		return nil, errFrozen(ctx)
+	}
+	st, err := v.s.services.Start(r.GetService())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return &agentv1.StartServiceResponse{Status: st}, nil
+}
+
+// ListServices reports every service.
+func (v *service) ListServices(context.Context, *agentv1.ListServicesRequest) (*agentv1.ListServicesResponse, error) {
+	return &agentv1.ListServicesResponse{Services: v.s.services.List()}, nil
+}
+
+// StopService ends a service.
+func (v *service) StopService(_ context.Context, r *agentv1.StopServiceRequest) (*agentv1.StopServiceResponse, error) {
+	if err := v.s.services.Stop(r.GetName()); err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return &agentv1.StopServiceResponse{}, nil
 }

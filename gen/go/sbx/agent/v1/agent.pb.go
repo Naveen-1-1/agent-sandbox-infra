@@ -367,12 +367,16 @@ func (x *Service) GetNeedsDeps() bool {
 
 // ServiceStatus is a service and its current state.
 type ServiceStatus struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Service       *Service               `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
-	Running       bool                   `protobuf:"varint,2,opt,name=running,proto3" json:"running,omitempty"`
-	Pid           int32                  `protobuf:"varint,3,opt,name=pid,proto3" json:"pid,omitempty"`
-	Restarts      int32                  `protobuf:"varint,4,opt,name=restarts,proto3" json:"restarts,omitempty"`
-	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Service   *Service               `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
+	Running   bool                   `protobuf:"varint,2,opt,name=running,proto3" json:"running,omitempty"`
+	Pid       int32                  `protobuf:"varint,3,opt,name=pid,proto3" json:"pid,omitempty"`
+	Restarts  int32                  `protobuf:"varint,4,opt,name=restarts,proto3" json:"restarts,omitempty"`
+	StartedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	// Exit code of the last run, if it ended.
+	LastExitCode int32 `protobuf:"varint,6,opt,name=last_exit_code,json=lastExitCode,proto3" json:"last_exit_code,omitempty"`
+	// The end of the service's output.
+	OutputTail    string `protobuf:"bytes,7,opt,name=output_tail,json=outputTail,proto3" json:"output_tail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -440,6 +444,20 @@ func (x *ServiceStatus) GetStartedAt() *timestamppb.Timestamp {
 		return x.StartedAt
 	}
 	return nil
+}
+
+func (x *ServiceStatus) GetLastExitCode() int32 {
+	if x != nil {
+		return x.LastExitCode
+	}
+	return 0
+}
+
+func (x *ServiceStatus) GetOutputTail() string {
+	if x != nil {
+		return x.OutputTail
+	}
+	return ""
 }
 
 type StartServiceRequest struct {
@@ -719,14 +737,17 @@ const file_sbx_agent_v1_agent_proto_rawDesc = "" +
 	"needs_deps\x18\x05 \x01(\bR\tneedsDeps\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc3\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8a\x02\n" +
 	"\rServiceStatus\x12/\n" +
 	"\aservice\x18\x01 \x01(\v2\x15.sbx.agent.v1.ServiceR\aservice\x12\x18\n" +
 	"\arunning\x18\x02 \x01(\bR\arunning\x12\x10\n" +
 	"\x03pid\x18\x03 \x01(\x05R\x03pid\x12\x1a\n" +
 	"\brestarts\x18\x04 \x01(\x05R\brestarts\x129\n" +
 	"\n" +
-	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\"F\n" +
+	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12$\n" +
+	"\x0elast_exit_code\x18\x06 \x01(\x05R\flastExitCode\x12\x1f\n" +
+	"\voutput_tail\x18\a \x01(\tR\n" +
+	"outputTail\"F\n" +
 	"\x13StartServiceRequest\x12/\n" +
 	"\aservice\x18\x01 \x01(\v2\x15.sbx.agent.v1.ServiceR\aservice\"K\n" +
 	"\x14StartServiceResponse\x123\n" +

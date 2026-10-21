@@ -66,6 +66,10 @@ message ServiceStatus {
   int32 pid = 3;
   int32 restarts = 4;
   google.protobuf.Timestamp started_at = 5;
+  // Exit code of the last run, if it ended.
+  int32 last_exit_code = 6;
+  // The end of the service's output.
+  string output_tail = 7;
 }
 
 message StartServiceRequest {
