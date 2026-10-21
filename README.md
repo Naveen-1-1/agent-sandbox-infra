@@ -8,12 +8,12 @@ restoring while the LLM is still thinking, so it is usually ready before the fir
 Built on [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) v1.0.7
 (extended, not forked). See [DESIGN.md](DESIGN.md) for how it works.
 
-> Status: under construction (MVP in progress).
+> Status: MVP. Local only: a kind cluster and a local S3 store.
 
 ## Requirements
 
 - macOS or Linux with Docker (6 CPUs / 10 GB RAM recommended for the full stack)
-- Go ≥ 1.26, kind, helm, kubectl, node ≥ 24 (for the editor extension's build and tests)
+- Go ≥ 1.26, kind, helm, kubectl, node ≥ 24 (to build and test the web UI and the editor extension)
 
 ```bash
 brew install go kind helm kubectl node
@@ -31,6 +31,7 @@ make doctor
 make kind-up          # 3-node kind cluster + local image registry on localhost:5001
 make deploy           # build images, push them, install the chart (charts/sbx)
 make demo             # an agent session: sleep after a turn, wake hidden behind thinking
+make ui               # a link to the web UI, signed in
 export KUBECONFIG=$PWD/bin/kubeconfig
 kubectl -n sbx-system get pods
 ```
@@ -51,6 +52,24 @@ thinking time and keeps the workspace afterwards.
 
 Every endpoint, credential, storage class and image registry is a Helm value in
 `charts/sbx/values.yaml`. `deploy/values/kind.yaml` holds the local overrides.
+
+## Web UI
+
+The gateway serves a web UI, at `http://127.0.0.1:8080/ui/` on kind. `make ui` prints a link
+that signs you in with the admin token.
+
+- **Sandboxes.** Create a sandbox from a git URL, switch between sandboxes, and watch each
+  one's state change live. Wake, suspend, open the editor or delete one from its page. The
+  demo policy, on by default, puts a sandbox to sleep 5 seconds after the agent's turn ends.
+- **Hidden wake.** End the agent's turn and let the sandbox fall asleep. Then send a user
+  message, with or without a wake-hint. Each reply draws the LLM's thinking, the wake's
+  stages and the agent's first command on one time axis, and says how much of the wake the
+  thinking hid.
+- **Settings.** Switch the cluster's sleep policy and its parameters, or reset it to the
+  chart's default.
+
+The link carries the token in the URL fragment, which browsers never send to a server. The
+page keeps the token in session storage, for that tab only.
 
 ## Using a workspace
 
@@ -114,12 +133,14 @@ each verdict, and `sbxctl get` explains it.
 bin/sbxctl create --repo http://sbx-fixtures.sbx-system.svc/hello-node.git \
   --policy fixed --param idleTimeout=1m --param afterTurnEnded=10s
 # Change the cluster policy at runtime (takes effect at once; survives upgrades):
-kubectl -n sbx-system create configmap sbx-policy --from-literal=policy.yaml='name: fixed
-params: {idleTimeout: 5m}'
+bin/sbxctl policy set fixed --param idleTimeout=5m
+bin/sbxctl policy get
+bin/sbxctl policy reset     # back to the chart's default
 ```
 
-The chart's defaults are under `policy:` in `charts/sbx/values.yaml`. A broken
-`sbx-policy` is reported as an Event on the ConfigMap and ignored.
+The settings page does the same. Both write the `sbx-policy` ConfigMap, which can also be
+edited directly. The chart's defaults are under `policy:` in `charts/sbx/values.yaml`. A
+broken `sbx-policy` is reported as an Event on the ConfigMap and ignored.
 
 ### Metrics and dashboards
 
@@ -140,11 +161,13 @@ dashboards.
 
 | Command | What it does |
 |---|---|
-| `make test` | Unit tests with `-race` and goroutine-leak checks, and the editor extension's |
+| `make test` | Unit tests with `-race` and goroutine-leak checks, and the web UI's and editor extension's |
+| `make web` | Type-check, test and build the web UI into the gateway |
 | `make extension` | Type-check, test and build the editor activity extension |
 | `make lint` | golangci-lint (tools are pinned in `tools.mod`) |
 | `make test-e2e` | End-to-end tests against the deployed cluster (`RUN=<regex>`) |
 | `make demo` | Play an agent session against the deployed cluster |
+| `make ui` | Print a signed-in link to the web UI |
 | `make grafana` | Open Grafana with the sbx dashboards |
 | `make gen` / `make verify-gen` | Regenerate CRDs and gRPC code / check they're current |
 | `make kind-up` / `make kind-down` | Create / delete the local cluster |

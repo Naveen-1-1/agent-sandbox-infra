@@ -313,6 +313,18 @@ metrics endpoints are on a separate admin port. Each replica also keeps the traf
 the sleep policy reads: last activity, turn started and ended, open streams and held
 requests. It serves them over gRPC to the controller.
 
+**Settings and events.** Two admin endpoints serve the web UI:
+
+- `/api/v1/policy` reads, validates and writes the `sbx-policy` ConfigMap that the
+  controller already watches, so a change reaches running workspaces at once. A policy is
+  built before it is saved, so a bad one is a 400. A concurrent edit is a 409. The gateway
+  may touch only the two policy ConfigMaps in its own namespace, plus create, which RBAC
+  can't limit by name.
+- `/api/v1/events` streams server-sent events: every workspace, then `ready`, then each
+  change. Each stream keeps the set of workspaces that changed, not a queue of events, so a
+  slow browser gets the latest state of each, never a backlog. Streams are bounded per
+  replica and pinged every 15 seconds.
+
 ### Tokens (`internal/token`)
 
 Every per-epoch token is `HMAC(master key, purpose | workspace UID | epoch)`. The purposes
@@ -402,6 +414,26 @@ Each wake prints a timeline from the request to pod scheduled, files restored, s
 the first command. The demo checks that the git state after every sleep matches the state
 before it. `make demo` pre-pulls the images onto the kind workers first, so the wakes
 measure restore time, not image download. An e2e test runs the same session.
+
+### Web UI (`web/`, embedded in the gateway)
+
+A React app that Vite builds into `internal/gateway/webui/dist`. The gateway embeds it and
+serves it under `/ui/`, so the UI ships with the gateway and needs no server of its own.
+
+- **Sign-in.** It calls the gateway API with the admin token. `sbxctl ui` prints a link with
+  the token in the URL fragment, which browsers never send to a server or in a Referer. The
+  page moves it to session storage and drops it from the address bar. It is a bearer token,
+  not a cookie, so other sites can't send requests with it.
+- **Live state.** The page reads the event stream with fetch, because EventSource can't
+  send an Authorization header. It reconnects with backoff, and after a reconnect it drops
+  the workspaces that weren't sent again.
+- **Hidden-wake demo.** The page plays the CLI demo's harness: a wake-hint or not, the
+  thinking, then the agent's first command. It draws the thinking, the wake's stages and
+  the held command on one axis. The server's stage times are placed from the moment the
+  browser asked for the wake, so clock skew between the browser and the cluster doesn't
+  distort them.
+- **Settings.** The page edits the cluster's sleep policy through `/api/v1/policy`, with each
+  parameter's default and help taken from the policy registry.
 
 ## Key decisions
 
