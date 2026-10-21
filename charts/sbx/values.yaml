@@ -11,6 +11,7 @@ global:
 
 images:
   controller: {repository: sbx-controller, tag: ""}
+  gateway: {repository: sbx-gateway, tag: ""}
   runtime: {repository: sbx-runtime, tag: ""}
   fixtures: {repository: sbx-fixtures, tag: ""}
 
@@ -23,6 +24,24 @@ controller:
   healthPort: 8081
   maxBundleBytes: 524288000 # 500 MiB
   presignTTL: 15m
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 512Mi}
+
+gateway:
+  replicas: 2
+  service:
+    type: ClusterIP # NodePort or LoadBalancer to reach it from outside
+    port: 80
+    nodePort: ""
+    annotations: {}
+  adminToken:
+    existingSecret: "" # Secret with key "token"; empty = generate one
+  hold:
+    perWorkspace: 256 # requests that may wait for one waking workspace
+    global: 4096
+    timeout: 90s
+  execTimeout: 10m
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 512Mi}
@@ -51,6 +70,9 @@ repositories:
 
 # Defaults for workspace pods.
 workspace:
+  # Namespace for workspaces created through the gateway.
+  namespace: sbx-workspaces
+  createNamespace: true
   defaultImage: mcr.microsoft.com/devcontainers/base:trixie
   runAsUser: 1000
   runAsGroup: 1000

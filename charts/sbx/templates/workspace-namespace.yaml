@@ -1,0 +1,9 @@
+{{- if .Values.workspace.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.workspace.namespace }}
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep # workspaces outlive the release
+{{- end }}

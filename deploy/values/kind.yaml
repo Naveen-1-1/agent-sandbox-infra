@@ -8,3 +8,7 @@ fixtures:
   enabled: true
 repositories:
   allowPrivateHosts: true # the fixtures git server is in-cluster
+gateway:
+  service:
+    type: NodePort
+    nodePort: 30080 # mapped to 127.0.0.1:8080 by deploy/kind/cluster.yaml

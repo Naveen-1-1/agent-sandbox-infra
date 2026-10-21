@@ -1,0 +1,147 @@
+{{- $name := printf "%s-gateway" .Release.Name }}
+{{- $adminSecret := default (printf "%s-gateway-admin" .Release.Name) .Values.gateway.adminToken.existingSecret }}
+{{- if not .Values.gateway.adminToken.existingSecret }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace $adminSecret }}
+{{- $tok := randAlphaNum 48 }}
+{{- if and $existing $existing.data $existing.data.token }}
+{{- $tok = b64dec $existing.data.token }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $adminSecret }}
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  token: {{ $tok | quote }}
+---
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+rules:
+  # Read workspaces, create and delete them, and bump spec.wake / annotations.
+  - apiGroups: [sbx.dev]
+    resources: [workspaces]
+    verbs: [get, list, watch, create, delete, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sbx-gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: sbx-gateway
+  template:
+    metadata:
+      labels: {{- include "sbx.labels" . | nindent 8 }}
+        app.kubernetes.io/name: sbx-gateway
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: gateway
+          image: {{ include "sbx.image" (dict "root" . "image" .Values.images.gateway "name" "gateway") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - {name: SBX_WORKSPACE_NAMESPACE, value: {{ .Values.workspace.namespace | quote }}}
+            - {name: SBX_HOLD_PER_WORKSPACE, value: {{ .Values.gateway.hold.perWorkspace | quote }}}
+            - {name: SBX_HOLD_GLOBAL, value: {{ .Values.gateway.hold.global | quote }}}
+            - {name: SBX_HOLD_TIMEOUT, value: {{ .Values.gateway.hold.timeout | quote }}}
+            - {name: SBX_EXEC_TIMEOUT, value: {{ .Values.gateway.execTimeout | quote }}}
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: admin, containerPort: 8081}
+            - {name: signals, containerPort: 9444}
+          readinessProbe:
+            httpGet: {path: /readyz, port: admin}
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: admin}
+            periodSeconds: 20
+          resources: {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: master-key, mountPath: /var/run/sbx/master-key, readOnly: true}
+            - {name: admin-token, mountPath: /var/run/sbx/admin-token, readOnly: true}
+      volumes:
+        - name: master-key
+          secret: {secretName: {{ include "sbx.signingSecret" . }}, defaultMode: 0440}
+        - name: admin-token
+          secret: {secretName: {{ $adminSecret }}, defaultMode: 0440}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+  {{- with .Values.gateway.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.gateway.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: sbx-gateway
+  ports:
+    - name: http
+      port: {{ .Values.gateway.service.port }}
+      targetPort: http
+      {{- if and (eq .Values.gateway.service.type "NodePort") .Values.gateway.service.nodePort }}
+      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- end }}
+---
+# Headless: the controller reaches every gateway replica for traffic signals.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-signals
+  labels: {{- include "sbx.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: sbx-gateway
+  ports:
+    - {name: signals, port: 9444, targetPort: signals}
+    - {name: admin, port: 8081, targetPort: admin}

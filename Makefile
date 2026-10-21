@@ -108,8 +108,8 @@ kind-down: ## Delete the kind cluster (REGISTRY_TOO=1 also removes the registry)
 
 ARCH     ?= $(shell $(GO) env GOARCH)
 REGISTRY ?= localhost:5001
-BINARIES := sbx-agent sbx-sidecar sbx-controller
-IMAGES   := sbx-runtime sbx-controller sbx-fixtures
+BINARIES := sbx-agent sbx-sidecar sbx-controller sbx-gateway
+IMAGES   := sbx-runtime sbx-controller sbx-gateway sbx-fixtures
 # Content-derived tag; computed after the binaries are built.
 TAG = $(shell hack/image-tag.sh $(ARCH))
 
