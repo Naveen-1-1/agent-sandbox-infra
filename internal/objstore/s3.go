@@ -11,19 +11,21 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 )
 
-// S3Config points at any S3-compatible endpoint. All values come from
-// configuration; nothing is read from the environment or instance metadata.
+// S3Config points at any S3-compatible endpoint. With keys, nothing else
+// is read; without them, credentials come from the environment the AWS
+// way: EKS Pod Identity, IRSA, AWS_* variables, a profile or the instance.
 type S3Config struct {
 	Endpoint  string // e.g. http://sbx-s3.sbx-system:8333; empty for AWS
 	Region    string
 	Bucket    string
-	AccessKey string
+	AccessKey string // with SecretKey; both empty for ambient credentials
 	SecretKey string
 	PathStyle bool // required by most self-hosted stores
 	// PresignEndpoint, if set, is used in presigned URLs instead of Endpoint
@@ -41,7 +43,8 @@ type S3 struct {
 // metaSHA256 is the user-metadata key holding a writer-supplied checksum.
 const metaSHA256 = "sha256"
 
-// NewS3 builds a client from explicit configuration only.
+// NewS3 builds a client, with static keys if given, else with the
+// environment's credentials.
 func NewS3(cfg S3Config) (*S3, error) {
 	if cfg.Bucket == "" {
 		return nil, errors.New("objstore: bucket is required")
@@ -50,10 +53,25 @@ func NewS3(cfg S3Config) (*S3, error) {
 	if region == "" {
 		region = "us-east-1"
 	}
+	var creds aws.CredentialsProvider
+	switch {
+	case cfg.AccessKey != "" && cfg.SecretKey != "":
+		creds = credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, "")
+	case cfg.AccessKey != "" || cfg.SecretKey != "":
+		return nil, errors.New("objstore: set both the access key and the secret key, or neither")
+	default:
+		// Loading reads only the environment and config files; credentials
+		// are fetched, and refreshed, on first use.
+		ambient, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(region))
+		if err != nil {
+			return nil, fmt.Errorf("objstore: loading AWS credentials: %w", err)
+		}
+		creds = ambient.Credentials
+	}
 	opts := func(endpoint string) s3.Options {
 		o := s3.Options{
 			Region:       region,
-			Credentials:  credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+			Credentials:  creds,
 			UsePathStyle: cfg.PathStyle,
 			// Only send/verify checksums we ask for; many S3-compatible stores
 			// reject the SDK's default CRC32 trailers.
@@ -77,12 +95,21 @@ func NewS3(cfg S3Config) (*S3, error) {
 	}, nil
 }
 
-// EnsureBucket creates the bucket if it does not exist.
+// EnsureBucket creates the bucket if it does not exist. Any other answer,
+// such as access denied, is an error rather than a reason to create it.
 func (s *S3) EnsureBucket(ctx context.Context) error {
-	if _, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &s.bucket}); err == nil {
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &s.bucket})
+	if err == nil {
 		return nil
 	}
-	_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &s.bucket})
+	if err := mapErr(err); !errors.Is(err, ErrNotFound) {
+		return fmt.Errorf("objstore: checking bucket %s: %w", s.bucket, err)
+	}
+	in := &s3.CreateBucketInput{Bucket: &s.bucket}
+	if r := s.client.Options().Region; r != "us-east-1" { // us-east-1 takes no location
+		in.CreateBucketConfiguration = &types.CreateBucketConfiguration{LocationConstraint: types.BucketLocationConstraint(r)}
+	}
+	_, err = s.client.CreateBucket(ctx, in)
 	var owned *types.BucketAlreadyOwnedByYou
 	if errors.As(err, &owned) {
 		return nil
